@@ -261,8 +261,8 @@ export const config: Config = {
                     decimals: 8,
                     origin: 'symbiosis',
                     icons: {
-                        large: 'https://assets.coingecko.com/coins/images/50472/standard/NewOption_06.png?1727849200',
-                        small: 'https://assets.coingecko.com/coins/images/50472/standard/NewOption_06.png?1727849200',
+                        large: 'https://app.symbiosis.finance/images/tokens/symBTC.svg',
+                        small: 'https://app.symbiosis.finance/images/tokens/symBTC.svg',
                     },
                 },
             ],
