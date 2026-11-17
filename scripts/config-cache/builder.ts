@@ -389,6 +389,9 @@ export class Builder {
             }
 
             const erc20 = new Contract(address, ERC20, fabric.provider)
+            const listed = this.chainConfig(symBtcHelper.chainId).stables.find(
+                (token) => token.address.toLowerCase() === address.toLowerCase()
+            )
             tokens.push({
                 ...original,
                 id: idCounter++,
@@ -398,6 +401,7 @@ export class Builder {
                 chainId: symBtcHelper.chainId,
                 chainFromId: original.chainId,
                 originalId: original.id,
+                icons: listed?.icons ?? original.icons,
             })
         }
 

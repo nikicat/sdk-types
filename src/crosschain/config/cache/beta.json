@@ -264,8 +264,8 @@
             "chainId": 1,
             "address": "0x81C3060Ba8E87c06a493A5549e202Ee3741a794C",
             "icons": {
-                "large": "https://assets.coingecko.com/coins/images/50472/standard/NewOption_06.png?1727849200",
-                "small": "https://assets.coingecko.com/coins/images/50472/standard/NewOption_06.png?1727849200"
+                "large": "https://app.symbiosis.finance/images/tokens/symBTC.svg",
+                "small": "https://app.symbiosis.finance/images/tokens/symBTC.svg"
             },
             "deprecated": false,
             "id": 8
@@ -2716,8 +2716,8 @@
             "chainId": 1,
             "address": "0x81C3060Ba8E87c06a493A5549e202Ee3741a794C",
             "icons": {
-                "large": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png",
-                "small": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png"
+                "large": "https://app.symbiosis.finance/images/tokens/symBTC.svg",
+                "small": "https://app.symbiosis.finance/images/tokens/symBTC.svg"
             },
             "chainFromId": 3652501241,
             "deprecated": false,
