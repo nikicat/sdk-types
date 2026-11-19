@@ -194,6 +194,7 @@ export type OverrideChainConfig = {
     id: ChainId
     rpc: string
     headers?: Record<string, string>
+    spareRpcs?: string[]
 }
 export type FeeConfig = {
     token: Token

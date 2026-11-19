@@ -152,7 +152,7 @@ export const config: Config = {
         {
             id: ChainId.ETH_MAINNET,
             rpc: 'https://ethereum-rpc.publicnode.com',
-            spareRpcs: ['https://eth.drpc.org', 'https://eth-pokt.nodies.app', 'https://eth.merkle.io'],
+            spareRpcs: ['https://eth.drpc.org', 'https://eth-pokt.nodies.app'],
             filterBlockOffset: 90,
             partnerFeeCollector: '0xb4291b5f2ed122d306afef72a2b0127613ab1eef',
             stables: [
@@ -629,7 +629,7 @@ export const config: Config = {
         {
             id: ChainId.ZKSYNC_MAINNET,
             rpc: 'https://mainnet.era.zksync.io',
-            spareRpcs: ['https://zksync.drpc.org', 'https://rpc.ankr.com/zksync_era'],
+            spareRpcs: ['https://zksync.drpc.org'],
             filterBlockOffset: 900,
             stables: [
                 {
@@ -1295,7 +1295,6 @@ export const config: Config = {
         {
             id: ChainId.MERLIN_MAINNET,
             rpc: 'https://rpc.merlinchain.io',
-            spareRpcs: ['https://merlin.blockpi.network/v1/rpc/public'],
             filterBlockOffset: 900,
             stables: [
                 {
@@ -1483,7 +1482,7 @@ export const config: Config = {
         {
             id: ChainId.BSQUARED_MAINNET,
             rpc: 'https://rpc.bsquared.network',
-            spareRpcs: ['https://b2-mainnet.alt.technology', 'https://mainnet.b2-rpc.com'],
+            spareRpcs: ['https://b2-mainnet.alt.technology'],
             filterBlockOffset: 900,
             stables: [
                 {

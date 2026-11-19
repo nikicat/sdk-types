@@ -54,6 +54,9 @@ export class Symbiosis {
                     if (found) {
                         chainConfig.rpc = found.rpc
                         chainConfig.headers = found.headers
+                        if (found.spareRpcs) {
+                            chainConfig.spareRpcs = found.spareRpcs
+                        }
                     }
                     return chainConfig
                 })
