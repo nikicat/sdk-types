@@ -561,7 +561,7 @@ export const config: Config = {
         {
             id: ChainId.ZKSYNC_MAINNET,
             rpc: 'https://mainnet.era.zksync.io',
-            spareRpcs: ['https://rpc.ankr.com/zksync_era', 'https://zksync.meowrpc.com', 'https://zksync.drpc.org'],
+            spareRpcs: ['https://zksync.drpc.org'],
             filterBlockOffset: 1000,
             stables: [
                 {
@@ -1140,7 +1140,6 @@ export const config: Config = {
         {
             id: ChainId.MERLIN_MAINNET,
             rpc: 'https://rpc.merlinchain.io',
-            spareRpcs: ['https://merlin.blockpi.network/v1/rpc/public'],
             filterBlockOffset: 1000,
             stables: [
                 {
