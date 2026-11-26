@@ -1,4 +1,5 @@
 import { ChainId } from '../../constants'
+import { chainData } from '../chainData'
 import type { Config } from '../types'
 
 export const config: Config = {
@@ -24,6 +25,7 @@ export const config: Config = {
     chains: [
         {
             id: 97,
+            chain: chainData(ChainId.BSC_TESTNET),
             rpc: 'https://bsc-testnet-rpc.publicnode.com',
             filterBlockOffset: 2000,
             stables: [],

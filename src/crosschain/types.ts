@@ -1,4 +1,6 @@
-import type { ChainId } from '../constants'
+import type { ChainId, Icons } from '../constants'
+import type { ApprovableMetaRouter } from '../metaRouters'
+import type { OnchainSwapRouter } from '../onchainRouters'
 import type { Percent, ProfilerItem, Token, TokenAmount, TokenConstructor } from '../entities'
 import type { Cache } from './cache'
 import type { TronTransactionData } from './tronTypes'
@@ -54,6 +56,8 @@ export type BtcAddress = `bc1${string}` | `1${string}` | `3${string}`
 export type EmptyAddress = ''
 export type NonEmptyAddress = EvmAddress | TronAddress | TonAddress | BtcAddress
 export type Address = NonEmptyAddress | EmptyAddress
+/** A token's address: its EVM contract's, checksummed (a Tron token's in EVM form), or empty for a chain's gas token. */
+export type TokenAddress = EvmAddress | EmptyAddress
 
 export interface VolumeFeeCollector {
     chainId: ChainId
@@ -93,7 +97,44 @@ export interface DepositoryConfig {
     minAmountDelay: number // Minimal delay before swap with minimal amount
 }
 
+/**
+ * A chain's own data: what the chain is, the same in every deployment. Each chain's is one entry of CHAIN_DATA,
+ * which the deployments' configs reference.
+ */
+export type ChainData = {
+    id: ChainId
+    name: string
+    explorer: string
+    icons: Icons
+    kind: ChainKind
+    gasToken: TokenConstructor
+    /** The wrapped gas token, such as WETH, WBNB or WTRX. A chain without one (BTC, TON, Solana, …) has none. */
+    wrappedGasToken?: TokenConstructor
+    multicall?: EvmAddress
+    /** The Uniswap V2 factory whose pair addresses are derived (CREATE2), or the pairs' addresses themselves. */
+    uniswapV2: { factory: EvmAddress; initCodeHash: string } | { pairs: UniV2PairAddress[] }
+    coinGecko?: { platform?: string; gasTokenId?: string }
+    /** The address format of a Bitcoin chain. */
+    btcNetwork?: 'bitcoin' | 'testnet' | 'regtest'
+}
+
+/**
+ * What kind of chain it is, which decides its address format and how a transfer to it is built. `other` is a chain
+ * that only partners (Changelly, THORChain) reach.
+ */
+export type ChainKind = 'evm' | 'btc' | 'tron' | 'ton' | 'solana' | 'quai' | 'perp' | 'other'
+
+/** A Uniswap V2 pair's address. The order of the two tokens does not matter. */
+export type UniV2PairAddress = {
+    token0: EvmAddress
+    token1: EvmAddress
+    pair: EvmAddress
+}
+
+/** A deployment's setup on one chain, with the chain's own data in `chain`. */
 export type ChainConfig = {
+    chain: ChainData
+    /** Equals chain.id. */
     id: ChainId
     rpc: string
     headers?: Record<string, string>
@@ -118,6 +159,16 @@ export type ChainConfig = {
     partnerFeeCollector?: string
     depository?: DepositoryConfig
     intentConfig?: IntentConfig
+    multicallRouterV2?: EvmAddress
+    /** The on-chain swap router, and its zero-fee companion for on-chain zaps into Bitcoin. */
+    onchainSwapRouter?: OnchainSwapRouter
+    onchainZeroFeeSwapRouter?: OnchainSwapRouter
+    /** The legacy FeeCollectors, for partners that whitelisted them. */
+    legacyFeeCollector?: EvmAddress
+    legacyZeroFeeCollector?: EvmAddress
+    approvableMetaRouter?: ApprovableMetaRouter
+    /** The Unwrapper (core-contracts periphery/Unwrapper.sol), which pays out in the gas token. */
+    unwrapper?: EvmAddress
 }
 
 export type AdvisorConfig = {
@@ -134,22 +185,38 @@ export type PerpbotConfig = {
     url: string
 }
 
+/** An omni pool: the contract on the host chain that swaps between the synthetics of one asset's tokens. */
 export type OmniPoolConfig = {
+    /** The chain the pool's contract is on (the deployment's host chain). */
     chainId: ChainId
-    address: Address
-    oracle: string
+    /** The pool contract's address. */
+    address: EvmAddress
+    /** The address of the pool's oracle contract (`OmniPoolOracle`), which quotes swaps through the pool. */
+    oracle: EvmAddress
+    /**
+     * Whether a route may swap on its source or destination chain to reach this pool's tokens. A general-purpose pool
+     * (USDC, WETH on mainnet) holds an asset every chain trades; a route through another pool only carries that pool's
+     * own asset, so that nobody gets an unexpected token on the destination chain.
+     */
     generalPurpose: boolean
-    coinGeckoId:
-        | 'usd-coin'
-        | 'weth'
-        | 'bitcoin'
-        | 'g-token'
-        | 'binancecoin'
-        | 'symbiosis-finance'
-        | 'apecoin'
-        | 'evaa-protocol'
-        | 'dropee'
+    /** The CoinGecko id of the asset the pool holds; it also names the pool (in metrics, for instance). */
+    coinGeckoId: OmniPoolCoinGeckoId
 }
+
+/** The CoinGecko ids of the assets that omni pools hold. */
+export const OMNI_POOL_COIN_GECKO_IDS = [
+    'usd-coin',
+    'weth',
+    'bitcoin',
+    'g-token',
+    'binancecoin',
+    'symbiosis-finance',
+    'apecoin',
+    'evaa-protocol',
+    'dropee',
+] as const
+
+export type OmniPoolCoinGeckoId = (typeof OMNI_POOL_COIN_GECKO_IDS)[number]
 
 export type SwapLimit = {
     chainId: ChainId

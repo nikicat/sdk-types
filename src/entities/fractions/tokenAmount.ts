@@ -18,6 +18,12 @@ export class TokenAmount extends Fraction {
         this.token = token
     }
 
+    /** The same amount of the token that pools hold for this one (Token.wrapped). */
+    public get wrapped(): TokenAmount {
+        const token = this.token.wrapped
+        return token === this.token ? this : new TokenAmount(token, this.raw)
+    }
+
     public toString(): string {
         return `${this.toFixed()} ${this.token}`
     }

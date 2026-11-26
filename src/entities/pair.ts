@@ -1,19 +1,25 @@
 import JSBI from 'jsbi'
 import invariant from 'tiny-invariant'
 
-import type { EvmAddress, NonEmptyAddress } from '..'
+import type { EvmAddress } from '..'
 import type { BigintIsh } from '../constants'
-import { _1000, _997, ChainId, FACTORY_ADDRESS, FIVE, INIT_CODE_HASH, MINIMUM_LIQUIDITY, ONE, ZERO } from '../constants'
-import { isTronChainId } from '../constants'
-import { getAddress, getCreate2Address as getEvmCreate2Address } from '@ethersproject/address'
-import { concat, hexDataSlice } from '@ethersproject/bytes'
-import { keccak256 as kekKeccak256 } from '@ethersproject/keccak256'
-import { keccak256, pack } from '@ethersproject/solidity'
-import type { BytesLike } from '../crosschain/types'
+import { _1000, _997, ChainId, FIVE, MINIMUM_LIQUIDITY, ONE, ZERO } from '../constants'
+import { CHAIN_DATA } from '../crosschain/chainData'
 import { InsufficientInputAmountError, InsufficientReservesError } from '../errors'
 import { parseBigintIsh, sqrt } from '../utils'
 import { Price, TokenAmount } from './fractions'
+import { getChainById } from './chainList'
 import { Token } from './token'
+
+/** @deprecated Read it from the chain data (CHAIN_DATA) instead; kept for the packages that still use it. */
+export const FACTORY_ADDRESS = Object.fromEntries(
+    CHAIN_DATA.flatMap(({ id, uniswapV2 }) => ('factory' in uniswapV2 ? [[id, uniswapV2.factory]] : []))
+) as Record<ChainId, EvmAddress>
+
+/** @deprecated Read it from the chain data (CHAIN_DATA) instead; kept for the packages that still use it. */
+export const INIT_CODE_HASH = Object.fromEntries(
+    CHAIN_DATA.flatMap(({ id, uniswapV2 }) => ('initCodeHash' in uniswapV2 ? [[id, uniswapV2.initCodeHash]] : []))
+) as Record<ChainId, string>
 
 export class MapWithDefault<K, V> extends Map<K, V> {
     #default: () => V
@@ -30,86 +36,55 @@ export class MapWithDefault<K, V> extends Map<K, V> {
     }
 }
 
-export const PAIR_ADDRESS_CACHE = new MapWithDefault<NonEmptyAddress, Map<NonEmptyAddress, EvmAddress>>(() => new Map())
-
-// TODO replace with onchain call to Factory.getPair method
-export function getZkCreate2Address(from: EvmAddress, salt: BytesLike, initCodeHash: BytesLike): EvmAddress {
-    const MAP: Record<EvmAddress, Record<string, EvmAddress>> = {
-        '0x50704Ac00064be03CEEd817f41E0Aa61F52ef4DC': {
-            '0x10dac1b69a0ef99baf5786f77bf0aab84749fd564007f4fad53a9395afa06d6a':
-                '0x20eDB5049461c9a6F490671742824c9F9aD05eD8', // H2 (USDC,wzkCRO)
-            '0xdaa80bb10d1689abf76a659ce2e4b2c7e859fca2d05933a3d81c3636c0ef62f0':
-                '0x006022eb9de7869e84f021605Ae23bE6C7D2d952', // H2 (USDC,vUSD)
-            '0x91965e804433f989e92a043ea20a588fec7c4ca4ce64a380d6215f3992eadbb6':
-                '0xA61947027caDbe9505d2a40E73EB21CB957e2daD', // H2 (wzkCRO,vUSD)
-        },
-    }
-    try {
-        return MAP[from][salt as string]
-    } catch {
-        throw new Error(`Unknown zk pair with initCodeHash: ${initCodeHash}`)
-    }
+/** A swap through a pair: the amount that comes out of it (or has to go in), and the pair after the swap. */
+export interface PairSwap {
+    amount: TokenAmount
+    pairAfter: Pair
 }
 
-// TRON CREATE2 — pure @ethersproject (no tronweb): keccak256(0x41 ‖ from ‖ salt ‖ initCodeHash)[12:].
-function getTronCreate2Address(from: EvmAddress, salt: BytesLike, initCodeHash: BytesLike): EvmAddress {
-    return getAddress(
-        hexDataSlice(kekKeccak256(concat(['0x41', getAddress(from), salt, initCodeHash])), 12)
-    ) as EvmAddress
-}
-
+/**
+ * A Uniswap V2 pair of two tokens on one chain, at given reserves: a snapshot of the pool, from which the amounts of a
+ * swap are computed with the constant product formula (x * y = k). The pair does not change; a swap gives the pair
+ * after it.
+ *
+ * Its tokens are kept sorted by address (`token0` before `token1`), as the pool contract sorts them, and its address
+ * is the pool contract's (`liquidityToken`).
+ */
 export class Pair {
+    /** The pool's LP token, whose address is the pool contract's. */
     public readonly liquidityToken: Token
     private readonly tokenAmounts: [TokenAmount, TokenAmount]
 
+    /**
+     * The address of the chain's Uniswap V2 pair of the two tokens, derived from its factory (CREATE2).
+     * @deprecated Use the chain's `pairAddress(tokenA, tokenB)` (Chain) instead.
+     */
     public static getAddress(tokenA: Token, tokenB: Token): EvmAddress {
-        const tokens = tokenA.sortsBefore(tokenB) ? [tokenA, tokenB] : [tokenB, tokenA] // does safety checks
-
-        const chainId = tokens[0].chainId
-        const address0 = tokens[0].address as NonEmptyAddress
-        const address1 = tokens[1].address as NonEmptyAddress
-
-        const types: string[] = ['address', 'address']
-        const params: (string | boolean)[] = [address0, address1]
-
-        if (PAIR_ADDRESS_CACHE.get(address0).get(address1) === undefined) {
-            let getCreate2Address = getEvmCreate2Address as (
-                from: EvmAddress,
-                salt: BytesLike,
-                initCodeHash: BytesLike
-            ) => EvmAddress
-
-            if (isTronChainId(chainId)) {
-                getCreate2Address = getTronCreate2Address
-            } else if (chainId === ChainId.CRONOS_ZK_MAINNET) {
-                getCreate2Address = getZkCreate2Address
-            }
-
-            PAIR_ADDRESS_CACHE.get(address0).set(
-                address1,
-                getCreate2Address(
-                    FACTORY_ADDRESS[chainId],
-                    keccak256(['bytes'], [pack(types, params)]),
-                    INIT_CODE_HASH[chainId]
-                )
-            )
-        }
-
-        return PAIR_ADDRESS_CACHE.get(address0).get(address1) as EvmAddress
+        return getChainById(tokenA.chainId)!.pairAddress(tokenA, tokenB)
     }
 
-    public constructor(tokenAmountA: TokenAmount, tokenAmountB: TokenAmount) {
+    /** @param address The pair's address, such as its chain's `pairAddress(tokenA, tokenB)`. */
+    public constructor(tokenAmountA: TokenAmount, tokenAmountB: TokenAmount, address: EvmAddress)
+    /** @deprecated Pass the pair's address (`chain.pairAddress(tokenA, tokenB)`): without it, it is derived through the global chain list. */
+    public constructor(tokenAmountA: TokenAmount, tokenAmountB: TokenAmount)
+    public constructor(tokenAmountA: TokenAmount, tokenAmountB: TokenAmount, address?: EvmAddress) {
         const tokenAmounts = tokenAmountA.token.sortsBefore(tokenAmountB.token) // does safety checks
             ? [tokenAmountA, tokenAmountB]
             : [tokenAmountB, tokenAmountA]
-        this.liquidityToken = new Token({
+        const lpToken = {
             chainId: tokenAmounts[0].token.chainId,
-            address: Pair.getAddress(tokenAmounts[0].token, tokenAmounts[1].token),
+            address: address ?? Pair.getAddress(tokenAmounts[0].token, tokenAmounts[1].token),
             decimals: 18,
             symbol: 'UNI-V2',
             name: 'Uniswap V2',
-        })
+        }
+        const chain = tokenAmounts[0].token.chain
+        this.liquidityToken = chain ? new Token(chain, lpToken) : new Token(lpToken)
         this.tokenAmounts = tokenAmounts as [TokenAmount, TokenAmount]
+    }
+
+    private get address(): EvmAddress {
+        return this.liquidityToken.address as EvmAddress
     }
 
     /**
@@ -171,13 +146,22 @@ export class Pair {
         return token.equals(this.token0) ? this.reserve0 : this.reserve1
     }
 
-    public getOutputAmount(inputAmount: TokenAmount): [TokenAmount, Pair] {
+    /**
+     * What swapping `inputAmount` into the pair gives out, and the pair after the swap. The swap pays Uniswap V2's
+     * 0.3% fee, whatever the DEX's own fee is.
+     * @throws InsufficientReservesError when a reserve is empty
+     * @throws InsufficientInputAmountError when the input is too small to give anything out
+     */
+    public getOutputAmount(inputAmount: TokenAmount): PairSwap {
         invariant(this.involvesToken(inputAmount.token), 'TOKEN')
         if (JSBI.equal(this.reserve0.raw, ZERO) || JSBI.equal(this.reserve1.raw, ZERO)) {
             throw new InsufficientReservesError()
         }
         const inputReserve = this.reserveOf(inputAmount.token)
         const outputReserve = this.reserveOf(inputAmount.token.equals(this.token0) ? this.token1 : this.token0)
+        // Uniswap V2's 0.3% fee (997/1000), whatever the DEX's own fee is: on a DEX that charges less, such as
+        // PancakeSwap V2 at 0.25% (ChainConfig.dexFee 25 on BSC), the amount out is a little short of the pool's
+        // (svc-symbiosis-api task Th75nt).
         const inputAmountWithFee = JSBI.multiply(inputAmount.raw, _997)
         const numerator = JSBI.multiply(inputAmountWithFee, outputReserve.raw)
         const denominator = JSBI.add(JSBI.multiply(inputReserve.raw, _1000), inputAmountWithFee)
@@ -188,10 +172,18 @@ export class Pair {
         if (JSBI.equal(outputAmount.raw, ZERO)) {
             throw new InsufficientInputAmountError()
         }
-        return [outputAmount, new Pair(inputReserve.add(inputAmount), outputReserve.subtract(outputAmount))]
+        return {
+            amount: outputAmount,
+            pairAfter: new Pair(inputReserve.add(inputAmount), outputReserve.subtract(outputAmount), this.address),
+        }
     }
 
-    public getInputAmount(outputAmount: TokenAmount): [TokenAmount, Pair] {
+    /**
+     * What has to go into the pair to get `outputAmount` out, rounded up, and the pair after the swap. The swap pays
+     * Uniswap V2's 0.3% fee, as in getOutputAmount.
+     * @throws InsufficientReservesError when a reserve is empty or holds no more than `outputAmount`
+     */
+    public getInputAmount(outputAmount: TokenAmount): PairSwap {
         invariant(this.involvesToken(outputAmount.token), 'TOKEN')
         if (
             JSBI.equal(this.reserve0.raw, ZERO) ||
@@ -203,13 +195,17 @@ export class Pair {
 
         const outputReserve = this.reserveOf(outputAmount.token)
         const inputReserve = this.reserveOf(outputAmount.token.equals(this.token0) ? this.token1 : this.token0)
+        // Uniswap V2's 0.3% fee, as in getOutputAmount.
         const numerator = JSBI.multiply(JSBI.multiply(inputReserve.raw, outputAmount.raw), _1000)
         const denominator = JSBI.multiply(JSBI.subtract(outputReserve.raw, outputAmount.raw), _997)
         const inputAmount = new TokenAmount(
             outputAmount.token.equals(this.token0) ? this.token1 : this.token0,
             JSBI.add(JSBI.divide(numerator, denominator), ONE)
         )
-        return [inputAmount, new Pair(inputReserve.add(inputAmount), outputReserve.subtract(outputAmount))]
+        return {
+            amount: inputAmount,
+            pairAfter: new Pair(inputReserve.add(inputAmount), outputReserve.subtract(outputAmount), this.address),
+        }
     }
 
     public getLiquidityMinted(

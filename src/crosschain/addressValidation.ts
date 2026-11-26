@@ -1,6 +1,5 @@
 import { ChainId } from '../constants'
 
-
 export const RECIPIENT_ADDRESS_PATTERNS: Partial<Record<ChainId, RegExp>> = {
     // Monero mainnet: 95 chars (standard) or 106 chars (integrated, +11 trailing).
     // Prefix [48][0-9AB] reflects the network-byte encoding for primary/subaddress.
@@ -40,26 +39,27 @@ export const RECIPIENT_ADDRESS_PATTERNS: Partial<Record<ChainId, RegExp>> = {
         /^t[13][1-9A-HJ-NP-Za-km-z]{33}$|^zs1[a-z0-9]{75}$|^zc[1-9A-HJ-NP-Za-km-z]{93}$/,
 }
 
-// THORChain memos are colon-delimited, so a BCH "bitcoincash:" scheme prefix
-// would break memo parsing — strip it. (CashAddr is expected in canonical
-// lowercase; there's no QR-scan path that would produce uppercase.)
-export function normalizeRecipientAddress(
-    chainId: ChainId,
-    address: string
-): string {
-    if (chainId !== ChainId.BCH_MAINNET) {
-        return address
-    }
-    return address.replace(/^bitcoincash:/i, '')
+/**
+ * A quick check of a recipient's address, for a form to flag a typo early: on a partner route's chain it matches the
+ * chain's address format (RECIPIENT_ADDRESS_PATTERNS, which allows Bitcoin Cash's `bitcoincash:` prefix), and on
+ * another chain it is not empty. It checks no checksum and gives no address to send: where an address is sent onward,
+ * it is parsed there, into the form the receiver takes.
+ */
+export function isValidRecipientAddress(chainId: ChainId, address: string): boolean {
+    const pattern = RECIPIENT_ADDRESS_PATTERNS[chainId]
+    return pattern ? pattern.test(withoutCashAddrPrefix(chainId, address)) : address.length > 0
 }
 
-export function isValidRecipientAddress(
-    chainId: ChainId,
-    address: string
-): boolean {
-    const pattern = RECIPIENT_ADDRESS_PATTERNS[chainId]
-    if (!pattern) {
-        return address.length > 0
-    }
-    return pattern.test(normalizeRecipientAddress(chainId, address))
+/**
+ * @deprecated Nothing reads it: an address sent onward is parsed where it is sent (svc-symbiosis-api's
+ * validateDepositAddress strips the prefix as it parses). On Bitcoin Cash, the address without its `bitcoincash:`
+ * scheme prefix.
+ */
+export function normalizeRecipientAddress(chainId: ChainId, address: string): string {
+    return withoutCashAddrPrefix(chainId, address)
+}
+
+// THORChain memos are colon-delimited, so a BCH "bitcoincash:" scheme prefix would break memo parsing.
+function withoutCashAddrPrefix(chainId: ChainId, address: string): string {
+    return chainId === ChainId.BCH_MAINNET ? address.replace(/^bitcoincash:/i, '') : address
 }
