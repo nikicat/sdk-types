@@ -83,6 +83,23 @@ Each of these changes the shape of `ChainData` and its 88 entries, so they are b
 - `package.json`: the devDependency `ethers` is unused, and `@ethersproject/units`, which a script imports, is not
   declared (b8-22).
 
+## From the API's move to a Deployment (svc-symbiosis-api task rdyrn, step 2)
+
+Not smells of the unsmell run, but follow-ups the API's step 2 found in sdk-types (2026-11-26).
+
+- **Mainnet's data lists sSIS and sUSDC twice** (#113 and #194, #121 and #195), each pair with different originals,
+  because SIS on BSC and USDC on Telos are each listed as an original and as a synthetic. A lookup gives the first
+  entry, and the API's route map skips the second on purpose. Fix it where the data is written:
+  `scripts/config-cache/builder.ts`.
+- **No lookup of a token by address alone.** The API's builder keeps `findToken(address, chainId)`, the deployment's
+  first token at an address on a chain, of any origin: its three callers (revert requests, stuck transactions, the
+  explorer's transactions) have an address but no `chainFromId`, so `deployment.token(token)` does not fit. A
+  `DeployedChain` method for it would let the API drop its own search.
+- **The Avalanche Unwrapper's note is gone.** The API's `UNWRAP_ADDRESSES` said of Avalanche's
+  `0xBC04d4F87B1d5c83AC8a05748Bc4cc5F893B8621`: "The CREATE2 factory owns this Unwrapper and cannot call setWrapper
+  on it (ENG-1945)". The API now reads `ChainConfig.unwrapper`, so the note belongs next to that address in
+  `src/crosschain/config/mainnet.ts`.
+
 ## Next
 
 Decide the ChainData model items together (they share one migration of `chainData.ts`), then the shipped-config items.
