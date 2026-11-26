@@ -8,16 +8,10 @@ export type Icons = {
     small?: string
 }
 
-export type ChainConstructor = {
-    id: ChainId
-    name: string
-    explorer: string
-    disabled: boolean
-    icons: Icons
-    swappable?: boolean
-    evm?: boolean
-}
-
+/**
+ * A chain's id. It is the chain's own id where it has one, such as Ethereum's 1 or Tron's 728126428, and otherwise
+ * an id that Symbiosis assigns.
+ */
 export enum ChainId {
     ETH_MAINNET = 1,
     ETH_RINKEBY = 4,

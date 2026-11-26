@@ -9,7 +9,7 @@ export const config: Config = {
     limits: [],
     omniPools: [
         {
-            chainId: 97,
+            chainId: ChainId.BSC_TESTNET,
             address: '0x789001A80a8EdBBEE07876b0dF58c3eAdEE89877',
             oracle: '0x2cD94CB0F4cBC4a51c3e9c4b88d03B982bE24608',
             generalPurpose: true,
@@ -24,7 +24,7 @@ export const config: Config = {
     btcConfigs: [],
     chains: [
         {
-            id: 97,
+            id: ChainId.BSC_TESTNET,
             chain: chainData(ChainId.BSC_TESTNET),
             rpc: 'https://bsc-testnet-rpc.publicnode.com',
             filterBlockOffset: 2000,

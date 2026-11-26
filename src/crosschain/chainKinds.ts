@@ -31,11 +31,7 @@ export function isQuaiChainId(chainId: ChainId | undefined): boolean {
     return getChainById(chainId)?.kind === 'quai'
 }
 
-/**
- * Perp venues (Hyperliquid, Lighter) are pseudo-chains: deposit destinations only, with balances read from the venue
- * API rather than an RPC.
- * @deprecated Use the chain's kind instead (`chain.kind === 'perp'`).
- */
+/** @deprecated Use the chain's kind instead (`chain.kind === 'perp'`). */
 export function isPerpChainId(chainId: ChainId | undefined): boolean {
     return getChainById(chainId)?.kind === 'perp'
 }

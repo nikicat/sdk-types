@@ -2,7 +2,7 @@ import { getAddress } from '@ethersproject/address'
 import JSBI from 'jsbi'
 import invariant from 'tiny-invariant'
 
-import type { BigintIsh } from './constants'
+import type { BigintIsh, ChainId } from './constants'
 import { ONE, SOLIDITY_TYPE_MAXIMA, SolidityType, THREE, TWO, ZERO } from './constants'
 import type { EvmAddress, TokenAddress } from './crosschain/types'
 
@@ -11,7 +11,9 @@ export function validateSolidityTypeInstance(value: JSBI, solidityType: Solidity
     invariant(JSBI.lessThanOrEqual(value, SOLIDITY_TYPE_MAXIMA[solidityType]), `${value} is not a ${solidityType}.`)
 }
 
-/** An EVM address, checksummed; the empty address (a gas token's) as it is. Errors for anything else. */
+/**
+ * Returns the address checksummed, or the empty address (a gas token's) unchanged. Errors when the address is neither.
+ */
 export function validateAndParseAddress(address: string): TokenAddress {
     if (address === '') {
         return address
@@ -51,7 +53,7 @@ export function sqrt(y: JSBI): JSBI {
     return z
 }
 
-/** `compute`, remembering what it gave for each pair of arguments. */
+/** Returns `compute`, remembering its result for each pair of arguments, which are compared as Map keys. */
 export function memoize2<A, B, V>(compute: (a: A, b: B) => V): (a: A, b: B) => V {
     const values = new Map<A, Map<B, V>>()
     return (a, b) => {
@@ -65,11 +67,31 @@ export function memoize2<A, B, V>(compute: (a: A, b: B) => V): (a: A, b: B) => V
     }
 }
 
-/** The first `n` of `items` in the order of `comparator`; of equal items, the earlier comes first. */
+/** Returns a function that runs `compute` at most once and returns its value on every call. */
+export function once<T>(compute: () => T): () => T {
+    let computed: { value: T } | undefined
+    return () => (computed ??= { value: compute() }).value
+}
+
+/** Returns the first `n` of `items` in the order of `comparator`. Of equal items, the earlier one comes first. */
 export function bestOf<T>(items: Iterable<T>, n: number, comparator: (a: T, b: T) => number): T[] {
     const best: T[] = []
     for (const item of items) sortedInsert(best, item, n, comparator)
     return best
+}
+
+/**
+ * Returns each row's chain id paired with what `pick` takes from the row, in the order of the rows. A row where `pick`
+ * returns undefined is left out.
+ */
+export function chainEntries<R extends { id: ChainId }, V>(
+    rows: readonly R[],
+    pick: (row: R) => V | undefined
+): [ChainId, V][] {
+    return rows.flatMap((row) => {
+        const value = pick(row)
+        return value === undefined ? [] : [[row.id, value]]
+    })
 }
 
 // given an array of items sorted by `comparator`, insert an item into its sort index and constrain the size to

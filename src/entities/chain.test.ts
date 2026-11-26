@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ChainId } from '../constants'
 import { chainData } from '../crosschain/chainData'
 import type { ChainData } from '../crosschain/types'
+import { hardhatAddresses, LOCAL, localChainData } from '../testing/localChain.fixture'
 import { Chain } from './chain'
 import { TokenAmount } from './fractions'
 import { Pair } from './pair'
@@ -10,23 +11,12 @@ import { PairGraph } from './pairGraph'
 import { Route } from './route'
 import { Token } from './token'
 
-// A chain that none of sdk-types' global tables knows: what works on it reads nothing global.
-const LOCAL = 31337 as ChainId
-const wethAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3' as const
-const usdAddress = '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512' as const
-const pairAddress = '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0' as const
-const local: ChainData = {
-    id: LOCAL,
-    name: 'Hardhat',
-    explorer: '',
-    icons: {},
-    kind: 'evm',
-    gasToken: { chainId: LOCAL, address: '', decimals: 18, symbol: 'ETH' },
-    wrappedGasToken: { chainId: LOCAL, address: wethAddress, decimals: 18, symbol: 'WETH' },
+const [wethAddress, usdAddress, pairAddress, otherAddress] = hardhatAddresses
+const local = localChainData(wethAddress, {
     uniswapV2: {
         pairs: [{ token0: usdAddress.toLowerCase() as `0x${string}`, token1: wethAddress, pair: pairAddress }],
     },
-}
+})
 const chain = new Chain(local)
 const usd = new Token({ chainId: LOCAL, address: usdAddress, decimals: 6, symbol: 'USD' })
 
@@ -46,11 +36,11 @@ describe('Chain', () => {
     it('gives a known pair whatever the order and case of its tokens, and errors for an unknown one', () => {
         expect(chain.pairAddress(usd, chain.wrappedGasToken!)).toBe(pairAddress)
         expect(chain.pairAddress(chain.wrappedGasToken!, usd)).toBe(pairAddress)
-        const other = new Token({ chainId: LOCAL, address: '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9', decimals: 18 })
+        const other = new Token({ chainId: LOCAL, address: otherAddress, decimals: 18 })
         expect(() => chain.pairAddress(usd, other)).toThrow(/no Uniswap V2 pair/)
     })
 
-    it('derives a pair from the factory and keeps it', () => {
+    it('derives a pair from the factory, the same for either order and another on another chain', () => {
         const eth = new Chain(chainData(ChainId.ETH_MAINNET))
         const [a, b] = [usdAddress, wethAddress].map(
             (address) => new Token({ chainId: ChainId.ETH_MAINNET, address, decimals: 18 })

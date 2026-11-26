@@ -9,6 +9,18 @@ describe('recipient addresses', () => {
         expect(normalizeRecipientAddress(ChainId.BCH_MAINNET, `bitcoincash:${cashAddr}`)).toBe(cashAddr)
         expect(normalizeRecipientAddress(ChainId.ETH_MAINNET, 'bitcoincash:x')).toBe('bitcoincash:x')
         expect(isValidRecipientAddress(ChainId.BCH_MAINNET, `bitcoincash:${cashAddr}`)).toBe(true)
+        expect(isValidRecipientAddress(ChainId.BCH_MAINNET, cashAddr)).toBe(true)
+    })
+
+    it('takes the Bitcoin Cash scheme prefix in any case, once, before a CashAddr or a legacy address', () => {
+        const cashAddr = 'qq07l6rr5lsdm3m80qxw80ku2ex0tj76vvsxpvmp6p'
+        const legacy = '1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu'
+        expect(isValidRecipientAddress(ChainId.BCH_MAINNET, `BitcoinCash:${cashAddr}`)).toBe(true)
+        expect(isValidRecipientAddress(ChainId.BCH_MAINNET, legacy)).toBe(true)
+        expect(isValidRecipientAddress(ChainId.BCH_MAINNET, `bitcoincash:${legacy}`)).toBe(true)
+        expect(isValidRecipientAddress(ChainId.BCH_MAINNET, `bitcoincash:bitcoincash:${cashAddr}`)).toBe(false)
+        expect(isValidRecipientAddress(ChainId.BCH_MAINNET, 'bitcoincash:')).toBe(false)
+        expect(isValidRecipientAddress(ChainId.BCH_MAINNET, `bitcoin:${cashAddr}`)).toBe(false)
     })
 
     it('checks a chain’s address format where it has one, and only that it is not empty elsewhere', () => {

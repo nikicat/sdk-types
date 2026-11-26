@@ -6,14 +6,13 @@ export { ChainId, MINIMUM_LIQUIDITY, Rounding, TradeType, ZERO } from './constan
 export type { BigintIsh, Icons } from './constants'
 
 export * from './errors'
-export * from './utils'
+export { parseBigintIsh, sortedInsert, sqrt, validateAndParseAddress, validateSolidityTypeInstance } from './utils'
 export * from './entities'
 export * from './crosschain/types'
-export type { ConfigName } from './crosschain/types'
+export type { ConfigName } from './crosschain/deployment'
 export { Cache } from './crosschain/cache'
 export * from './crosschain/tradeType'
 export * from './crosschain/tronTypes'
-export type { SwapLabel } from './crosschain/labels'
 export * from './crosschain/constants'
 export * from './crosschain/addressValidation'
 export * from './crosschain/tradeUtils'
@@ -35,9 +34,8 @@ export {
     isTonChainId,
     isTronChainId,
 } from './crosschain/chainKinds'
-export * from './crosschain/config'
+export { beta, dev, mainnet, testnet } from './crosschain/config'
 export { getApprovableMetaRouter } from './metaRouters'
-export type { ApprovableMetaRouter } from './metaRouters'
 export {
     getOnchainSwapRouter,
     getOnchainZeroFeeSwapRouter,
@@ -48,15 +46,4 @@ export {
     ONCHAIN_SWAP_ROUTERS,
     ONCHAIN_ZERO_FEE_SWAP_ROUTERS,
 } from './onchainRouters'
-export type { OnchainSwapRouter } from './onchainRouters'
-export type {
-    ConfigCacheData,
-    Id,
-    OmniPoolId,
-    OmniPoolInfo,
-    OmniPoolToken,
-    OmniPoolTokenIndex,
-    TokenId,
-    TokenInfo,
-} from './crosschain/config/cache/types'
-export { configCacheDataSchema, parseConfigCacheData } from './crosschain/config/cache/types'
+export { parseConfigCacheData } from './crosschain/config/cache/types'

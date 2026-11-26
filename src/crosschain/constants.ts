@@ -2,6 +2,7 @@ import { ChainId } from '../constants'
 import { CHAIN_DATA } from './chainData'
 import type { EvmAddress } from './types'
 import { GAS_TOKEN, Token, WETH } from '../entities'
+import { chainEntries } from '../utils'
 
 // a list of tokens by chain
 type ChainTokensList = {
@@ -82,25 +83,31 @@ export const WETH_ONLY: ChainTokensList = {
     [ChainId.X_LAYER_MAINNET]: [WETH[ChainId.X_LAYER_MAINNET]],
 }
 
-/** @deprecated Read it from the chain data (CHAIN_DATA) instead; kept for the packages that still use it. */
+/** @deprecated Read `chainData(id).multicall` instead. */
 export const MULTICALL_ADDRESSES: { [chainId in ChainId]?: EvmAddress } = Object.fromEntries(
-    CHAIN_DATA.flatMap((data) => (data.multicall ? [[data.id, data.multicall]] : []))
+    chainEntries(CHAIN_DATA, (data) => data.multicall || undefined)
 )
+
+/** @deprecated Read `chainData(id).uniswapV2.factory` instead. */
+export const FACTORY_ADDRESS = Object.fromEntries(
+    chainEntries(CHAIN_DATA, ({ uniswapV2 }) => ('factory' in uniswapV2 ? uniswapV2.factory : undefined))
+) as Record<ChainId, EvmAddress>
+
+/** @deprecated Read `chainData(id).uniswapV2.initCodeHash` instead. */
+export const INIT_CODE_HASH = Object.fromEntries(
+    chainEntries(CHAIN_DATA, ({ uniswapV2 }) => ('initCodeHash' in uniswapV2 ? uniswapV2.initCodeHash : undefined))
+) as Record<ChainId, string>
 
 // --- CoinGecko platform/gas-token maps ---
 
-/** @deprecated Read it from the chain data (CHAIN_DATA) instead; kept for the packages that still use it. */
+/** @deprecated Read `chainData(id).coinGecko?.platform` instead. */
 export const COINGECKO_PLATFORMS = new Map<ChainId, string>(
-    CHAIN_DATA.flatMap(({ id, coinGecko }) =>
-        coinGecko?.platform !== undefined ? [[id, coinGecko.platform] as const] : []
-    )
+    chainEntries(CHAIN_DATA, (data) => data.coinGecko?.platform)
 )
 
-/** @deprecated Read it from the chain data (CHAIN_DATA) instead; kept for the packages that still use it. */
+/** @deprecated Read `chainData(id).coinGecko?.gasTokenId` instead. */
 export const COINGECKO_GAS_TOKEN_IDS = new Map<ChainId, string>(
-    CHAIN_DATA.flatMap(({ id, coinGecko }) =>
-        coinGecko?.gasTokenId !== undefined ? [[id, coinGecko.gasTokenId] as const] : []
-    )
+    chainEntries(CHAIN_DATA, (data) => data.coinGecko?.gasTokenId)
 )
 
 // --- Changelly constants + chain predicates ---
@@ -167,7 +174,6 @@ export function isThorChainL1DestChainId(chainId: ChainId | undefined): boolean 
     return THORCHAIN_L1_DEST_CHAIN_IDS.includes(chainId)
 }
 
-// Lives here rather than in ../constants to avoid a module-init cycle (depends on isChangellyNativeChainId).
 export function isChangellyTradeChainId(chainId: ChainId): boolean {
     return CHANGELLY_TRADE_CHAIN_IDS.has(chainId)
 }

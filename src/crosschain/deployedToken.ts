@@ -1,18 +1,25 @@
+import { getAddress } from '@ethersproject/address'
+
 import type { ChainId } from '../constants'
 import { type Chain, Token } from '../entities'
 import { NoTransitTokenError, SdkError } from '../errors'
 import type { OmniPoolInfo, OmniPoolTokenIndex, TokenInfo } from './config/cache/types'
 import type { EvmAddress, OmniPoolCoinGeckoId, OmniPoolConfig } from './types'
 
+let addSynthetic: (original: DeployedToken, synthetic: SyntheticToken) => void
+
 /**
- * A token a deployment knows, with its synthetics on other chains. Get one from a Deployment (`deployment.tokens()`,
- * `deployment.token(token)`); the pool a token trades in is the deployment's to say (`deployment.omniPoolOf`), since a
- * token does not know the pools that hold it.
+ * A token does not refer to the pools that hold it, to avoid a cycle. Deployment.omniPoolOf finds its pool
+ * (svc-symbiosis-api task rdyrn, State).
  */
 export class DeployedToken extends Token {
     // Not serialized: it is the deployment's data.
     readonly #info: TokenInfo
     readonly #synthetics: SyntheticToken[] = []
+
+    static {
+        addSynthetic = (original, synthetic) => original.#synthetics.push(synthetic)
+    }
 
     /** @internal Built by its Deployment. */
     public constructor(chain: Chain, info: TokenInfo) {
@@ -26,60 +33,58 @@ export class DeployedToken extends Token {
     }
 
     /**
-     * The synthetics of this token on other chains. A synthetic can have its own: sSIS on the Symbiosis chain is a
-     * synthetic of SIS on BSC, itself a synthetic of SIS on Ethereum. The gas token has none; its wrapped token has.
+     * The token's synthetics on other chains. A synthetic can have synthetics of its own (svc-symbiosis-api task
+     * rdyrn, State).
      */
     public get synthetics(): SyntheticToken[] {
         return [...this.#synthetics]
     }
 
-    /** This token's synthetic on `chainId`, such as the one an omni pool on that chain holds. */
+    /** Returns the token's synthetic on the given chain. */
     public syntheticOn(chainId: ChainId): SyntheticToken | undefined {
         return this.#synthetics.find((synth) => synth.chainId === chainId)
     }
 
-    /** @internal While its Deployment is built. */
-    public addSynthetic(synthetic: SyntheticToken): void {
-        this.#synthetics.push(synthetic)
+    /** Checks whether the token can enter an omni pool from its chain. A deprecated or synthetic token cannot. */
+    public get canTransit(): boolean {
+        return !this.isSynthetic && !this.deprecated
     }
 }
 
 /** A synthetic token: one minted on its chain for its original on another (`chainFromId`). */
 export class SyntheticToken extends DeployedToken {
-    #original?: DeployedToken
+    readonly #original: DeployedToken
 
-    /** The token this one is minted for, on `chainFromId`. */
-    public get original(): DeployedToken {
-        if (!this.#original) throw new SdkError(`Synthetic token ${this.address} has no original`)
-        return this.#original
-    }
-
-    /** @internal While its Deployment is built. */
-    public setOriginal(original: DeployedToken): void {
+    /**
+     * @internal Built by its Deployment, after its original, to whose synthetics it adds itself. Errors when the
+     * original is not on its chainFromId.
+     */
+    public constructor(chain: Chain, info: TokenInfo, original: DeployedToken) {
+        super(chain, info)
         if (original.chainId !== this.chainFromId) {
             throw new SdkError(
                 `Synthetic token ${this.address} of chain ${this.chainFromId} has an original on another`
             )
         }
         this.#original = original
-        original.addSynthetic(this)
+        addSynthetic(original, this)
+    }
+
+    /** The token this one is minted for, on `chainFromId`. */
+    public get original(): DeployedToken {
+        return this.#original
     }
 }
 
 /**
- * An omni pool of a deployment: the contract on the host chain that swaps between the synthetics of one asset's tokens,
- * with its tokens and their indexes in the contract. It is an OmniPoolConfig, so it goes where one does.
+ * An omni pool built from a deployment's data. It is an OmniPoolConfig, so code that takes a pool's config takes it
+ * whole (svc-symbiosis-api task rdyrn, State).
  */
 export class OmniPool implements OmniPoolConfig {
-    /** The chain the pool's contract is on (the deployment's host chain). */
     public readonly chainId: ChainId
-    /** The pool contract's address. */
     public readonly address: EvmAddress
-    /** The address of the pool's oracle contract (`OmniPoolOracle`), which quotes swaps through the pool. */
     public readonly oracle: EvmAddress
-    /** Whether a route may swap on its source or destination chain to reach this pool's tokens (see OmniPoolConfig). */
     public readonly generalPurpose: boolean
-    /** The CoinGecko id of the asset the pool holds; it also names the pool. */
     public readonly coinGeckoId: OmniPoolCoinGeckoId
     readonly #info: OmniPoolInfo
     // Each token's index in the pool contract.
@@ -93,9 +98,7 @@ export class OmniPool implements OmniPoolConfig {
         this.generalPurpose = info.generalPurpose
         this.coinGeckoId = info.coinGeckoId
         this.#info = info
-        for (const { index, token } of tokens) {
-            if (!this.#indexes.has(token)) this.#indexes.set(token, index)
-        }
+        for (const { index, token } of [...tokens].sort((a, b) => a.index - b.index)) this.#indexes.set(token, index)
     }
 
     /** @internal The pool's entry in its deployment's data. */
@@ -113,7 +116,20 @@ export class OmniPool implements OmniPoolConfig {
         return this.#indexes.has(token)
     }
 
-    /** The token's index in the pool. Errors for a token that is not in it. */
+    /**
+     * Checks whether the token trades in the pool. A synthetic trades in the pool that holds it. Another token trades
+     * in the pool that holds it or one of its synthetics.
+     */
+    public trades(token: DeployedToken): boolean {
+        return this.has(token) || (!token.isSynthetic && token.synthetics.some((synthetic) => this.has(synthetic)))
+    }
+
+    /** Checks whether the given config is this pool's. The config's address can be in any case. */
+    public is(config: OmniPoolConfig): boolean {
+        return config.chainId === this.chainId && getAddress(config.address) === this.address
+    }
+
+    /** Returns the token's index in the pool. Errors with NoTransitTokenError when the pool does not hold the token. */
     public indexOf(token: DeployedToken): OmniPoolTokenIndex {
         const index = this.#indexes.get(token)
         if (index === undefined) {
@@ -123,19 +139,18 @@ export class OmniPool implements OmniPoolConfig {
     }
 
     /**
-     * The tokens that enter the pool from `chainId`: the originals there of the synthetics it holds, and the tokens it
-     * holds itself on its own chain; neither deprecated nor synthetic.
+     * Returns the tokens that can transit into the pool from the given chain. These are the originals on that chain of
+     * the synthetics that the pool holds, and the pool's own tokens on that chain.
      */
     public transitTokens(chainId: ChainId): DeployedToken[] {
-        const tokens = new Set<DeployedToken>()
-        for (const token of this.#indexes.keys()) {
-            const entering = token instanceof SyntheticToken ? token.original : token
-            if (entering.chainId === chainId && !entering.isSynthetic && !entering.deprecated) tokens.add(entering)
-        }
-        return [...tokens]
+        const entering = this.tokens.map((token) => (token instanceof SyntheticToken ? token.original : token))
+        return [...new Set(entering)].filter((token) => token.chainId === chainId && token.canTransit)
     }
 
-    /** The token that enters the pool from `chainId`. Errors when the chain has none, or more than one. */
+    /**
+     * Returns the token that enters the pool from the given chain. Errors with NoTransitTokenError when no token enters
+     * the pool from the chain, and with SdkError when several do.
+     */
     public transitToken(chainId: ChainId): DeployedToken {
         const tokens = this.transitTokens(chainId)
         if (tokens.length === 0) {

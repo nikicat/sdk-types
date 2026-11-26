@@ -1,43 +1,41 @@
+import invariant from 'tiny-invariant'
+
 import { ChainId, type Icons } from '../constants'
 import type { ChainData, ChainKind, EvmAddress } from '../crosschain/types'
 import { type PairAddressOf, pairAddressesOf } from './pairAddresses'
 import { Token } from './token'
 
 /**
- * A chain: its own data (CHAIN_DATA, or a test's) and what depends only on it, such as its wrapped gas token and its
- * Uniswap V2 pair addresses. A Deployment gives each of its chains with the deployment's setup on it (DeployedChain).
+ * A chain over its own data (ChainData), which is the same in every deployment. A deployment's setup on the chain is on
+ * DeployedChain (README.md, "Deployments and chains").
  */
 export class Chain {
-    /** The chain's id: the chain's own id where it has one (Ethereum's 1, Tron's), else one Symbiosis gives it. */
     public readonly id: ChainId
-    /** The chain's name as people know it, such as `Ethereum` or `BNB`. */
     public readonly name: string
     /** The base URL of the chain's block explorer, such as `https://etherscan.io`. */
     public readonly explorer: string
-    /** The URLs of the chain's logo, small and large, either of which can be missing. */
     public readonly icons: Icons
-    /** What kind of chain it is (ChainKind), which decides its address format and how a transfer to it is built. */
     public readonly kind: ChainKind
     /**
-     * @deprecated Always false: whether an app shows a chain as out of service is the app's to keep, in its own type
-     * of chain. Kept as an own field so that copies of chains (`{ ...chain }`) keep it too.
+     * @deprecated Always false. Whether an app shows a chain as out of service is the app's to keep, in its own chain
+     * type (svc-symbiosis-api task rdyrn, State).
      */
     public readonly disabled: boolean = false
     /**
-     * @deprecated Always true: whether an app offers a chain for swaps is the app's to keep, in its own type of chain.
+     * @deprecated Always true. Whether an app offers a chain for swaps is the app's to keep, in its own chain type
+     * (svc-symbiosis-api task rdyrn, State).
      */
     public readonly swappable: boolean = true
 
     /**
-     * The token that pays for gas, such as ETH or BNB: its address is empty, except on chains whose gas token is also a
-     * contract (Metis, Tempo, Stable, Arc).
+     * The token that pays for gas, such as ETH or BNB. Its address is empty unless the gas token is also a contract,
+     * such as Metis's.
      */
     public readonly gasToken: Token
-    /** The wrapped gas token, such as WETH, WBNB or WTRX, or undefined for a chain without one. */
+    /** The wrapped gas token, such as WETH, WBNB or WTRX. */
     public readonly wrappedGasToken?: Token
     private readonly pairAddressOf: PairAddressOf
 
-    /** @param data The chain's plain data: its CHAIN_DATA entry, or a test's own. */
     public constructor(public readonly data: ChainData) {
         this.id = data.id
         this.name = data.name
@@ -49,15 +47,20 @@ export class Chain {
         this.pairAddressOf = pairAddressesOf(data)
     }
 
-    /** The address of this chain's Uniswap V2 pair of two of its tokens: a known pair's, or the factory's CREATE2. */
+    /**
+     * Returns the address of this chain's Uniswap V2 pair of the two tokens, in either order. Errors when either token
+     * is on another chain, or when the two have the same address. On a chain whose data lists its pairs, it also errors
+     * when the list has no pair of these two.
+     */
     public pairAddress(tokenA: Token, tokenB: Token): EvmAddress {
-        const [token0, token1] = tokenA.sortsBefore(tokenB) ? [tokenA, tokenB] : [tokenB, tokenA] // does safety checks
+        invariant(tokenA.chainId === this.id, 'CHAIN_ID')
+        const [token0, token1] = Token.sorted(tokenA, tokenB)
         return this.pairAddressOf(token0.address, token1.address)
     }
 }
 
 /**
- * A chain's plain fields, without its behaviour: what a copy of a chain (`{ ...chain }`) keeps, for code that passes
- * chains around as records.
+ * The type of an app's plain copy of a chain, such as `{ ...chain, disabled: true }`, which is no longer a Chain
+ * (README.md, "Upgrading from 0.0.x").
  */
 export type ChainMetadata = Pick<Chain, 'id' | 'name' | 'explorer' | 'icons' | 'kind' | 'disabled' | 'swappable'>

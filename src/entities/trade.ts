@@ -2,13 +2,12 @@ import JSBI from 'jsbi'
 import invariant from 'tiny-invariant'
 
 import { ONE, TradeType, ZERO } from '../constants'
-import { getChainById } from './chainList'
 import { Fraction } from './fractions/fraction'
-import { Percent } from './fractions/percent'
+import { basisPointsToPercent, Percent } from './fractions/percent'
 import { Price } from './fractions/price'
 import { TokenAmount } from './fractions/tokenAmount'
 import type { Pair } from './pair'
-import { PairGraph } from './pairGraph'
+import { type BestTradeOptions, type BestTrades, PairGraph } from './pairGraph'
 import { Route } from './route'
 import type { Token } from './token'
 import { tokenEquals, WETH } from './token'
@@ -76,26 +75,28 @@ export function tradeComparator(a: Trade, b: Trade) {
     return a.route.path.length - b.route.path.length
 }
 
-export interface BestTradeOptions {
-    // how many results to return
-    maxNumResults?: number
-    // the maximum number of hops a trade should contain
-    maxHops?: number
-}
-
-/** @deprecated Use the chain's `wrapAmount(amount)` (Chain) instead. */
+/**
+ * @deprecated Use the amount's `wrapped` (TokenAmount) instead. On a chain without a wrapped gas token, this function
+ * gives an amount of WETH's placeholder token, while `wrapped` keeps the gas token.
+ */
 export function wrappedAmount(tokenAmount: TokenAmount): TokenAmount {
     return tokenAmount.token.isNative ? new TokenAmount(wrappedToken(tokenAmount.token), tokenAmount.raw) : tokenAmount
 }
 
-/** @deprecated Use the chain's `wrap(token)` (Chain) instead. */
+/**
+ * @deprecated Use the token's `wrapped` (Token) instead. On a chain without a wrapped gas token, this function gives
+ * WETH's placeholder token, while `wrapped` keeps the gas token.
+ */
 export function wrappedToken(token: Token): Token {
     return token.isNative ? WETH[token.chainId] : token
 }
 
 /** A trade's price impact, split into the pools' fee and the rest. */
 export interface PriceBreakdown {
-    /** The price impact of the constant product formula alone (x * y = k), without the fee. */
+    /**
+     * The price impact of the constant product formula alone (x * y = k), without the fee. It is negative for a loss,
+     * the opposite sign of Trade.priceImpact.
+     */
     priceImpactWithoutFee: Percent
     /** The fee the trade pays the liquidity providers, in the input token. */
     realizedLPFee: TokenAmount
@@ -227,12 +228,12 @@ export class Trade {
     }
 
     /**
-     * The trade's price impact without the liquidity providers' fee, and that fee in the input token. `dexFee` is the
-     * fee of each hop in basis points (ChainConfig.dexFee).
+     * Returns the trade's price impact split into the fee and the rest, at `dexFee`. `dexFee` is the fee of each hop, in
+     * basis points (ChainConfig.dexFee).
      */
     public priceBreakdown(dexFee: number): PriceBreakdown {
-        const baseFee = new Percent(JSBI.BigInt(dexFee), JSBI.BigInt(10000))
-        const oneHundredPercent = new Percent(JSBI.BigInt(10000), JSBI.BigInt(10000))
+        const baseFee = basisPointsToPercent(dexFee)
+        const oneHundredPercent = basisPointsToPercent(10000)
         const inputFractionAfterFee = oneHundredPercent.subtract(baseFee)
 
         // each hop takes its fee off what passes through it: for 2 hops at 0.3%, 1 - (1 - 0.003) * (1 - 0.003)
@@ -242,7 +243,6 @@ export class Trade {
                 oneHundredPercent
             )
         )
-        // the x*y=k impact, without the fee
         const priceImpactWithoutFee = this.priceImpact.subtract(realizedLPFee)
         return {
             priceImpactWithoutFee: new Percent(
@@ -262,9 +262,9 @@ export class Trade {
         tokenAmountIn: TokenAmount,
         tokenOut: Token,
         options: BestTradeOptions = {}
-    ): { trades: Trade[]; errors: Error[] } {
+    ): BestTrades {
         invariant(pairs.length > 0, 'PAIRS')
-        return new PairGraph(getChainById(pairs[0].chainId)!, pairs).bestTradesExactIn(tokenAmountIn, tokenOut, options)
+        return new PairGraph(pairs[0].requiredChain, pairs).bestTradesExactIn(tokenAmountIn, tokenOut, options)
     }
 
     /** @deprecated Use a PairGraph of the pairs' chain (`new PairGraph(chain, pairs).bestTradesExactOut(…)`) instead. */
@@ -275,10 +275,6 @@ export class Trade {
         options: BestTradeOptions = {}
     ): Trade[] {
         invariant(pairs.length > 0, 'PAIRS')
-        return new PairGraph(getChainById(pairs[0].chainId)!, pairs).bestTradesExactOut(
-            tokenIn,
-            tokenAmountOut,
-            options
-        ).trades
+        return new PairGraph(pairs[0].requiredChain, pairs).bestTradesExactOut(tokenIn, tokenAmountOut, options).trades
     }
 }

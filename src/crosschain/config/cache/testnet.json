@@ -21,7 +21,6 @@
             "symbol": "WTON(BSC)",
             "name": "WTON(BSC)",
             "chainId": 97,
-            "isNative": false,
             "icons": {
                 "large": "https://s2.coinmarketcap.com/static/img/coins/128x128/11419.png",
                 "small": "https://s2.coinmarketcap.com/static/img/coins/128x128/11419.png"
@@ -35,7 +34,6 @@
             "symbol": "mSymBtc",
             "name": "mSymBtc",
             "chainId": 11155111,
-            "isNative": false,
             "icons": {
                 "large": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png",
                 "small": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png"
@@ -49,7 +47,6 @@
             "symbol": "WBTC",
             "name": "Wrapped BTC",
             "chainId": 43113,
-            "isNative": false,
             "icons": {
                 "large": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png",
                 "small": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png"
@@ -63,7 +60,6 @@
             "symbol": "sBTC",
             "name": "sBTC",
             "chainId": 97,
-            "isNative": false,
             "icons": {
                 "large": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png",
                 "small": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png"
@@ -79,7 +75,6 @@
             "symbol": "sBTC",
             "name": "Synthetic BTC from Fuji",
             "chainId": 97,
-            "isNative": false,
             "icons": {
                 "large": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png",
                 "small": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png"
@@ -95,7 +90,6 @@
             "symbol": "sBTC",
             "name": "Synthetic BTC",
             "chainId": 11155111,
-            "isNative": false,
             "icons": {
                 "large": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png",
                 "small": "https://s2.coinmarketcap.com/static/img/coins/128x128/1.png"

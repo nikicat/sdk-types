@@ -1,4 +1,3 @@
-import { getAddress } from '@ethersproject/address'
 import { AddressZero } from '@ethersproject/constants'
 
 import type { ChainId } from '../constants'
@@ -15,9 +14,14 @@ import { config as dev } from './config/dev'
 import { config as mainnet } from './config/mainnet'
 import { config as testnet } from './config/testnet'
 import { DeployedToken, OmniPool, SyntheticToken } from './deployedToken'
-import type { ChainConfig, Config, ConfigCacheData, ConfigName, OmniPoolConfig, TokenAddress } from './types'
+import type { ChainConfig, Config, ConfigCacheData, OmniPoolConfig, TokenAddress } from './types'
 
-/** A chain of a deployment: the chain, with the deployment's setup on it (`config`) and its tokens there. */
+let setTokens: (chain: DeployedChain, tokens: DeployedToken[]) => void
+
+/**
+ * A chain with one deployment's setup on it. It does not refer back to its deployment (svc-symbiosis-api task rdyrn,
+ * State).
+ */
 export class DeployedChain extends Chain {
     public constructor(public readonly config: ChainConfig) {
         if (config.id !== config.chain.id) {
@@ -26,37 +30,35 @@ export class DeployedChain extends Chain {
         super(config.chain)
     }
 
-    readonly #tokens: DeployedToken[] = []
-    // By address; a few addresses have one token per origin chain (see addToken).
-    readonly #tokensByAddress = new Map<TokenAddress, DeployedToken[]>()
+    #tokens: DeployedToken[] = []
+    // By address. Some addresses have several tokens, one per chainFromId, and the data lists a few tokens twice. A
+    // lookup gives the first (svc-symbiosis-api task rdyrn, State).
+    #tokensByAddress = new Map<TokenAddress, DeployedToken[]>()
+
+    static {
+        setTokens = (chain, tokens) => {
+            chain.#tokens = tokens
+            chain.#tokensByAddress = Map.groupBy(tokens, (token) => token.address)
+        }
+    }
 
     /** The deployment's tokens on this chain, in the order of its data. */
     public tokens(): DeployedToken[] {
         return [...this.#tokens]
     }
 
-    /** @internal The chain's token with `token`'s address and origin chain (`chainFromId`); Deployment.token for others. */
+    /**
+     * @internal Returns the chain's token with the address and chainFromId of the given token. Deployment.token also
+     * falls back to the wrapped gas token.
+     */
     public token(token: Token): DeployedToken | undefined {
         return this.#tokensByAddress.get(token.address)?.find((other) => other.chainFromId === token.chainFromId)
-    }
-
-    /** @internal While its Deployment is built. */
-    public addToken(token: DeployedToken): void {
-        this.#tokens.push(token)
-        // The data can list a token twice: mainnet's sSIS (#113, #194) and sUSDC (#121, #195), whose originals are
-        // themselves listed twice, as an original and as a synthetic (SIS on BSC #13 and #98, USDC on Telos #21 and
-        // #100). A lookup gives the first entry, as the old search did; the second is reached only from its original's
-        // synthetics.
-        const sameAddress = this.#tokensByAddress.get(token.address)
-        if (sameAddress) sameAddress.push(token)
-        else this.#tokensByAddress.set(token.address, [token])
     }
 }
 
 /**
- * One Symbiosis deployment (mainnet, beta, testnet, dev, or a test's own), over its plain data: its Config and the
- * tokens and omni pools of its config cache. It gives its chains (DeployedChain), its tokens (DeployedToken) and its
- * omni pools (OmniPool), linked to each other.
+ * One Symbiosis deployment's objects, built from its plain data, which stays as it is (svc-symbiosis-api task rdyrn,
+ * Decisions; README, Deployments and chains).
  */
 export class Deployment {
     private readonly chainsById: Map<ChainId, DeployedChain>
@@ -64,69 +66,32 @@ export class Deployment {
     // In the order of the data.
     readonly #pools: OmniPool[]
 
+    /**
+     * Errors when a chain config holds another chain's data, a token or an omni pool is on a chain that the config does
+     * not list, an id names no token, a synthetic's original is not on its chainFromId, originals form a loop, an omni
+     * pool is listed twice, a token trades in two omni pools, or the config lists omni pools other than the data's, in
+     * their order.
+     */
     public constructor(
         public readonly config: Config,
         public readonly cacheData: ConfigCacheData
     ) {
         this.chainsById = new Map(config.chains.map((chainConfig) => [chainConfig.id, new DeployedChain(chainConfig)]))
-        // The data's ids wire the objects together; nothing keeps them afterwards.
-        const byId = new Map<TokenId, DeployedToken>()
-        this.#tokens = cacheData.tokens.map((info) => {
-            const chain = this.findChain(info.chainId)
-            if (!chain) {
-                throw new SdkError(
-                    `Token ${info.address} is on chain ${info.chainId}, which the deployment has no config for`
-                )
-            }
-            if (info.chainFromId === undefined && info.originalId !== undefined) {
-                throw new SdkError(`Token ${info.address} on chain ${info.chainId} has an original but no chainFromId`)
-            }
-            const token =
-                info.chainFromId === undefined ? new DeployedToken(chain, info) : new SyntheticToken(chain, info)
-            if (!byId.has(info.id)) byId.set(info.id, token)
-            chain.addToken(token)
-            return token
-        })
-        const tokenOfId = (id: TokenId) => {
-            const token = byId.get(id)
-            if (!token) throw new SdkError(`Can't get tokenInfo for id ${id}`)
-            return token
-        }
-        for (const token of this.#tokens) {
-            if (token instanceof SyntheticToken) {
-                const { originalId } = token.info
-                if (originalId === undefined) throw new SdkError(`Synthetic token ${token.address} has no original`)
-                token.setOriginal(tokenOfId(originalId))
-            }
-        }
-        this.#pools = []
-        for (const info of cacheData.omniPools) {
-            if (!this.findChain(info.chainId)) {
-                throw new SdkError(
-                    `Omni pool ${info.address} is on chain ${info.chainId}, which the deployment has no config for`
-                )
-            }
-            if (this.#pools.some((pool) => pool.chainId === info.chainId && pool.address === info.address)) {
-                throw new SdkError(`The data lists omni pool ${info.address} on chain ${info.chainId} twice`)
-            }
-            const entries = info.tokens.map(({ index, tokenId }) => ({ index, token: tokenOfId(tokenId) }))
-            this.#pools.push(new OmniPool(info, entries))
-        }
+        this.#tokens = buildTokens(cacheData.tokens, this.chainsById)
+        const tokensOfChain = Map.groupBy(this.#tokens, (token) => token.chainId)
+        for (const chain of this.chainsById.values()) setTokens(chain, tokensOfChain.get(chain.id) ?? [])
+        this.#pools = buildPools(cacheData.omniPools, this.#tokens, this.chainsById)
         this.checkConfigPools()
         this.checkOnePoolPerToken()
     }
 
-    // The data's pools are built from the config's (the cache builder adds each pool's tokens), so a config that lists
-    // pools lists the data's, in their order; one that does not is stale data or the wrong config.
+    // A config that lists pools lists the data's, in their order. Otherwise the data is stale (svc-symbiosis-api task
+    // rdyrn, State).
     private checkConfigPools(): void {
         const configured = this.config.omniPools
         if (configured.length === 0) return
         const same =
-            configured.length === this.#pools.length &&
-            configured.every(
-                (config, i) =>
-                    config.chainId === this.#pools[i].chainId && getAddress(config.address) === this.#pools[i].address
-            )
+            configured.length === this.#pools.length && configured.every((config, i) => this.#pools[i].is(config))
         if (!same) {
             const list = (pools: OmniPoolConfig[]) => pools.map((pool) => `${pool.chainId}:${pool.address}`).join(', ')
             throw new SdkError(
@@ -135,11 +100,10 @@ export class Deployment {
         }
     }
 
-    // A token trades in one pool at most, which omniPoolOf relies on: a synthetic, in the pool that holds it; another
-    // token, in the pool that holds it or one of its synthetics.
+    // A token trades in one pool at most, which omniPoolOf relies on.
     private checkOnePoolPerToken(): void {
         for (const token of this.#tokens) {
-            const pools = this.#pools.filter((pool) => this.trades(pool, token))
+            const pools = this.#pools.filter((pool) => pool.trades(token))
             if (pools.length > 1) {
                 const addresses = pools.map((pool) => pool.address).join(', ')
                 throw new SdkError(`Token ${token.address} on chain ${token.chainId} trades in omni pools ${addresses}`)
@@ -147,28 +111,16 @@ export class Deployment {
         }
     }
 
-    private trades(pool: OmniPool, token: DeployedToken): boolean {
-        return pool.has(token) || (!token.isSynthetic && token.synthetics.some((synthetic) => pool.has(synthetic)))
-    }
-
-    // The deployments sdk-types ships, the only place that knows them by name.
-    private static readonly shipped: Record<ConfigName, Deployment> = {
-        mainnet: new Deployment(mainnet, parseConfigCacheData(mainnetCache)),
-        beta: new Deployment(beta, parseConfigCacheData(betaCache)),
-        testnet: new Deployment(testnet, parseConfigCacheData(testnetCache)),
-        dev: new Deployment(dev, parseConfigCacheData(devCache)),
-    }
-
-    /** A shipped deployment by its name. Errors for an unknown name. */
+    /** Returns the shipped deployment with the given name. Errors when the name is not a shipped deployment's. */
     public static named(name: ConfigName): Deployment {
-        if (!Object.hasOwn(Deployment.shipped, name)) throw new SdkError('Unknown config name')
-        return Deployment.shipped[name]
+        if (!Object.hasOwn(shipped, name)) throw new SdkError('Unknown config name')
+        return shipped[name]
     }
 
     /** Errors when the deployment has no such chain. */
     public chain(chainId: ChainId): DeployedChain {
         const chain = this.findChain(chainId)
-        if (!chain) throw new SdkError(`Could not config by given chainId: ${chainId}`)
+        if (!chain) throw new SdkError(`The deployment has no chain ${chainId}`)
         return chain
     }
 
@@ -185,33 +137,99 @@ export class Deployment {
     }
 
     /**
-     * The deployment's own token for `token` (one parsed from a request, read from a log, …), by chain, address and
-     * origin chain; for the gas token, its wrapped token's when the data has not the gas token itself.
+     * Returns the deployment's token with the chain, address and chainFromId of the given token. For a gas token that
+     * the data does not list, returns the chain's wrapped gas token.
      */
     public token(token: Token): DeployedToken | undefined {
         const chain = this.findChain(token.chainId)
-        return chain?.token(token) ?? (token.isNative ? chain?.token(token.wrapped) : undefined)
+        return chain?.token(token) ?? chain?.token(token.wrapped)
     }
 
-    /** The deployment's omni pools, in the order of its data (and of its config, which lists the same). */
+    /** The deployment's omni pools, in the order of its data. */
     public omniPools(): OmniPool[] {
         return [...this.#pools]
     }
 
-    /** The omni pool `token` trades in: for a synthetic, the pool that holds it; for another token, the pool that holds
-     * it or one of its synthetics. */
+    /** Returns the omni pool that the token trades in (see OmniPool.trades). */
     public omniPoolOf(token: DeployedToken): OmniPool | undefined {
-        return this.#pools.find((pool) => this.trades(pool, token))
+        return this.#pools.find((pool) => pool.trades(token))
     }
 }
 
-// A config for a deployment of `data` alone, for ConfigCache: each chain's shipped config, or a minimal one with no
-// contracts.
+const shipped = {
+    mainnet: new Deployment(mainnet, parseConfigCacheData(mainnetCache)),
+    beta: new Deployment(beta, parseConfigCacheData(betaCache)),
+    testnet: new Deployment(testnet, parseConfigCacheData(testnetCache)),
+    dev: new Deployment(dev, parseConfigCacheData(devCache)),
+}
+
+export type ConfigName = keyof typeof shipped
+
+// Returns the deployment's tokens in the order of the data. Each is built after its original, so that a synthetic gets
+// its original in its constructor.
+function buildTokens(infos: TokenInfo[], chains: ReadonlyMap<ChainId, DeployedChain>): DeployedToken[] {
+    const infoById = new Map(infos.map((info) => [info.id, info]))
+    const built = new Map<TokenInfo, DeployedToken>()
+    const building = new Set<TokenInfo>()
+    const build = (info: TokenInfo): DeployedToken => {
+        const done = built.get(info)
+        if (done) return done
+        if (building.has(info)) {
+            throw new SdkError(`The originals of token ${info.address} on chain ${info.chainId} form a loop`)
+        }
+        building.add(info)
+        const chain = configuredChain(chains, `Token ${info.address}`, info.chainId)
+        const referrer = `Token ${info.address} on chain ${info.chainId} names original`
+        const token =
+            info.originalId === undefined
+                ? new DeployedToken(chain, info)
+                : new SyntheticToken(chain, info, build(tokenOfId(infoById, info.originalId, referrer)))
+        built.set(info, token)
+        return token
+    }
+    return infos.map(build)
+}
+
+// Returns the deployment's omni pools in the order of the data.
+function buildPools(
+    infos: OmniPoolInfo[],
+    tokens: DeployedToken[],
+    chains: ReadonlyMap<ChainId, DeployedChain>
+): OmniPool[] {
+    const tokenById = new Map(tokens.map((token) => [token.info.id, token]))
+    const pools: OmniPool[] = []
+    for (const info of infos) {
+        configuredChain(chains, `Omni pool ${info.address}`, info.chainId)
+        if (pools.some((pool) => pool.is(info))) {
+            throw new SdkError(`The data lists omni pool ${info.address} on chain ${info.chainId} twice`)
+        }
+        const referrer = `Omni pool ${info.address} on chain ${info.chainId} lists token`
+        const entries = info.tokens.map(({ index, tokenId }) => ({
+            index,
+            token: tokenOfId(tokenById, tokenId, referrer),
+        }))
+        pools.push(new OmniPool(info, entries))
+    }
+    return pools
+}
+
+function configuredChain(chains: ReadonlyMap<ChainId, DeployedChain>, what: string, chainId: ChainId): DeployedChain {
+    const chain = chains.get(chainId)
+    if (!chain) throw new SdkError(`${what} is on chain ${chainId}, which the deployment has no config for`)
+    return chain
+}
+
+function tokenOfId<T>(byId: ReadonlyMap<TokenId, T>, id: TokenId, referrer: string): T {
+    const found = byId.get(id)
+    if (found === undefined) throw new SdkError(`${referrer} #${id}, which the data does not list`)
+    return found
+}
+
+// Returns a config for the given data. Each chain gets its shipped config, or a minimal one with no contracts.
 function configOf(data: ConfigCacheData): Config {
     const chainIds = [
         ...new Set([...data.tokens.map((token) => token.chainId), ...data.omniPools.map((pool) => pool.chainId)]),
     ]
-    const shipped = (['mainnet', 'beta', 'testnet', 'dev'] as const).map((name) => Deployment.named(name))
     return {
         advisor: { url: '' },
         omniPools: data.omniPools,
@@ -221,7 +239,7 @@ function configOf(data: ConfigCacheData): Config {
         btcConfigs: [],
         chains: chainIds.map(
             (chainId): ChainConfig =>
-                shipped
+                Object.values(shipped)
                     .map((deployment) => deployment.findChain(chainId)?.config)
                     .find((config) => config !== undefined) ?? {
                     id: chainId,
@@ -244,14 +262,13 @@ function configOf(data: ConfigCacheData): Config {
 }
 
 /**
- * @deprecated Use a Deployment instead (`Deployment.mainnet.token(token)?.syntheticOn(chainId)`, `omniPool.tokens`,
- * …); kept for the packages that still use it.
+ * @deprecated Use a Deployment instead: `Deployment.named('mainnet').token(token)?.syntheticOn(chainId)`,
+ * `omniPool.tokens`.
  */
 export class ConfigCache {
-    public readonly data: ConfigCacheData
     private readonly deployment: Deployment
 
-    /** @param source A shipped deployment's name, its data alone, or the deployment itself. */
+    /** Errors when the data has a chain that sdk-types has no data of. */
     public constructor(source: ConfigName | ConfigCacheData | Deployment) {
         this.deployment =
             source instanceof Deployment
@@ -259,16 +276,18 @@ export class ConfigCache {
                 : typeof source === 'string'
                   ? Deployment.named(source)
                   : new Deployment(configOf(source), source)
-        this.data = this.deployment.cacheData
     }
 
     public tokens(): Token[] {
         return this.deployment.tokens()
     }
 
-    /** A synthetic's original when it is on `chainId`; for any other token, its synthetic on `chainId`. */
+    /**
+     * Returns the original of a synthetic when the original is on the given chain. For any other token, returns its
+     * synthetic on the given chain. Errors when the deployment does not have the token.
+     */
     public getRepresentation(token: Token, chainId: ChainId): Token | undefined {
-        const deployed = this.requireToken(token.isSynthetic ? token : token.wrapped)
+        const deployed = this.requireToken(token.wrapped)
         if (deployed instanceof SyntheticToken) {
             return deployed.original.chainId === chainId ? deployed.original : undefined
         }
@@ -284,28 +303,19 @@ export class ConfigCache {
     }
 
     /**
-     * For a synthetic, the pool that holds it; for another token, the pool that holds one of its wrapped form's
-     * synthetics, or the token itself. Errors for a token the deployment has not.
+     * Returns the omni pool that the token's wrapped form trades in (see OmniPool.trades). Errors when the deployment
+     * does not have the token.
      */
     public getOmniPoolByToken(token: Token): OmniPoolInfo | undefined {
-        const deployed = this.requireToken(token.isSynthetic ? token : token.wrapped)
-        return this.deployment.omniPoolOf(deployed)?.info
+        return this.deployment.omniPoolOf(this.requireToken(token.wrapped))?.info
     }
 
     public getOmniPoolTokenIndex(omniPoolConfig: OmniPoolConfig, token: Token): number {
-        const pool = this.omniPool(omniPoolConfig)
-        if (!pool) {
-            throw new SdkError(`getOmniPoolByConfig: cannot find omniPoolByConfig ${omniPoolConfig}`)
-        }
-        return pool.indexOf(this.requireToken(token))
+        return this.requirePool(omniPoolConfig).indexOf(this.requireToken(token))
     }
 
     public getOmniPoolTokens(omniPoolConfig: OmniPoolConfig): Token[] {
-        const pool = this.omniPool(omniPoolConfig)
-        if (!pool) {
-            throw new SdkError('Cannot find omniPool')
-        }
-        return pool.tokens
+        return this.requirePool(omniPoolConfig).tokens
     }
 
     public getTokenInfoById(id: Id): TokenInfo {
@@ -314,17 +324,21 @@ export class ConfigCache {
         return token.info
     }
 
-    // The deployment's token with `token`'s chain, address and origin, with no gas token fallback.
+    // Returns the deployment's token with the chain, address and chainFromId of the given token. Unlike
+    // Deployment.token, it does not fall back to the wrapped gas token.
     private requireToken(token: Token): DeployedToken {
         const found = this.deployment.findChain(token.chainId)?.token(token)
         if (!found) throw new SdkError(`Can't get tokenInfo by token ${token.address} ${token.chainId}`)
         return found
     }
 
-    // A config's address is checksummed already, but its case is the caller's to choose.
     private omniPool(config: OmniPoolConfig): OmniPool | undefined {
-        const at = (address: string) =>
-            this.deployment.omniPools().find((pool) => pool.chainId === config.chainId && pool.address === address)
-        return at(config.address) ?? at(getAddress(config.address))
+        return this.deployment.omniPools().find((pool) => pool.is(config))
+    }
+
+    private requirePool(config: OmniPoolConfig): OmniPool {
+        const pool = this.omniPool(config)
+        if (!pool) throw new SdkError(`The deployment has no omni pool ${config.chainId}:${config.address}`)
+        return pool
     }
 }

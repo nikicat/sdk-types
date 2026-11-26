@@ -1,17 +1,22 @@
-import { getAddress } from '@ethersproject/address'
+import { getAddress, isAddress } from '@ethersproject/address'
 import { z } from 'zod'
 
 import type { ChainId } from '../../../constants'
-import { type Address, type EvmAddress, OMNI_POOL_COIN_GECKO_IDS } from '../../types'
+import type { TokenConstructor } from '../../../entities'
+import { type Address, type EvmAddress, OMNI_POOL_COIN_GECKO_IDS, type OmniPoolConfig } from '../../types'
 
-// The config cache's data, with the schemas that read it from JSON (parseConfigCacheData). EVM addresses come out
-// checksummed, whatever their case in the JSON, so that the objects built from the data can compare them exactly.
+// The parse checksums EVM addresses, so the objects compare them exactly (svc-symbiosis-api task rdyrn, State).
+
+// A schema for each field of T. An object schema whose shape `satisfies` it reads all of T's fields and no others, so a
+// field added to T does not compile until the schema reads it too.
+type Shape<T> = { [K in keyof T]-?: z.core.$ZodType<T[K]> }
 
 const chainIdSchema = z.custom<ChainId>((value) => Number.isInteger(value), 'a chain id')
 const evmAddressSchema = z
-    .custom<EvmAddress>((value) => typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value), 'an EVM address')
+    .string()
+    .refine((value) => /^0x[0-9a-fA-F]{40}$/.test(value) && isAddress(value), 'an EVM address')
     .transform((address) => getAddress(address) as EvmAddress)
-// A token's address: an EVM one, or another chain's (Tron, TON, Bitcoin) as it is; empty for a gas token.
+// A token's address: an EVM address, another chain's address (Tron, TON, Bitcoin) as it is, or empty for a gas token.
 const addressSchema = z.union([
     evmAddressSchema,
     z.custom<Address>(
@@ -21,8 +26,8 @@ const addressSchema = z.union([
 ])
 
 /**
- * A token's id in a deployment's data. It only links the data's entries (a synthetic's original, a pool's tokens);
- * the objects built from the data link them directly.
+ * A token's id in a deployment's data. The objects refer to each other directly (svc-symbiosis-api task rdyrn,
+ * State).
  */
 export const tokenIdSchema = z.number().int().nonnegative().brand<'TokenId'>()
 export type TokenId = z.infer<typeof tokenIdSchema>
@@ -41,23 +46,35 @@ export type OmniPoolTokenIndex = z.infer<typeof omniPoolTokenIndexSchema>
 /** @deprecated The data's ids are TokenId and OmniPoolId. */
 export type Id = number
 
-// Loose: the JSON carries fields the types leave out (isNative), and the data keeps them.
-export const tokenInfoSchema = z.looseObject({
-    id: tokenIdSchema,
-    originalId: tokenIdSchema.optional(),
-    name: z.string().optional(),
-    symbol: z.string().optional(),
-    address: addressSchema,
-    decimals: z.number().int().min(0).max(255),
-    chainId: chainIdSchema,
-    chainFromId: chainIdSchema.optional(),
-    icons: z.object({ large: z.string().optional(), small: z.string().optional() }).optional(),
-    userToken: z.boolean().optional(),
-    deprecated: z.boolean().optional(),
-    origin: z.string().optional(),
-    attributes: z.object({ solana: z.string().optional(), ton: z.string().optional() }).optional(),
-})
-export type TokenInfo = z.infer<typeof tokenInfoSchema>
+export type TokenInfo = TokenConstructor & {
+    id: TokenId
+    originalId?: TokenId
+}
+
+export const tokenInfoSchema = z
+    .object({
+        id: tokenIdSchema,
+        originalId: tokenIdSchema.optional(),
+        name: z.string().optional(),
+        symbol: z.string().optional(),
+        address: addressSchema,
+        decimals: z.number().int().min(0).max(255),
+        chainId: chainIdSchema,
+        chainFromId: chainIdSchema.optional(),
+        icons: z.object({ large: z.string().optional(), small: z.string().optional() }).optional(),
+        userToken: z.boolean().optional(),
+        deprecated: z.boolean().optional(),
+        origin: z.string().optional(),
+        attributes: z.object({ solana: z.string().optional(), ton: z.string().optional() }).optional(),
+    } satisfies Shape<TokenInfo>)
+    .superRefine((info, ctx) => {
+        if ((info.originalId === undefined) !== (info.chainFromId === undefined)) {
+            ctx.addIssue({
+                code: 'custom',
+                message: `Token ${info.address} on chain ${info.chainId} has only one of originalId and chainFromId`,
+            })
+        }
+    })
 
 export const omniPoolTokenSchema = z.object({
     index: omniPoolTokenIndexSchema,
@@ -65,22 +82,36 @@ export const omniPoolTokenSchema = z.object({
 })
 export type OmniPoolToken = z.infer<typeof omniPoolTokenSchema>
 
-export const omniPoolInfoSchema = z.looseObject({
+export type OmniPoolInfo = OmniPoolConfig & {
+    id: OmniPoolId
+    tokens: OmniPoolToken[]
+}
+
+export const omniPoolInfoSchema = z.object({
     id: omniPoolIdSchema,
     chainId: chainIdSchema,
     address: evmAddressSchema,
     oracle: evmAddressSchema,
     generalPurpose: z.boolean(),
     coinGeckoId: z.enum(OMNI_POOL_COIN_GECKO_IDS),
-    tokens: z.array(omniPoolTokenSchema),
-})
-export type OmniPoolInfo = z.infer<typeof omniPoolInfoSchema>
+    tokens: z
+        .array(omniPoolTokenSchema)
+        .refine((tokens) => unique(tokens.map((token) => token.tokenId)), 'unique token ids'),
+} satisfies Shape<OmniPoolInfo>)
+
+export type ConfigCacheData = {
+    tokens: TokenInfo[]
+    omniPools: OmniPoolInfo[]
+}
 
 export const configCacheDataSchema = z.object({
-    tokens: z.array(tokenInfoSchema),
+    tokens: z.array(tokenInfoSchema).refine((tokens) => unique(tokens.map((token) => token.id)), 'unique token ids'),
     omniPools: z.array(omniPoolInfoSchema),
-})
-export type ConfigCacheData = z.infer<typeof configCacheDataSchema>
+} satisfies Shape<ConfigCacheData>)
+
+function unique(values: unknown[]): boolean {
+    return new Set(values).size === values.length
+}
 
 /** Reads a deployment's config cache data from JSON. Errors listing what does not match. */
 export function parseConfigCacheData(json: unknown): ConfigCacheData {

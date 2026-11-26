@@ -2,9 +2,8 @@ import { ChainId } from '../constants'
 import type { ChainData } from './types'
 
 /**
- * Every chain sdk-types knows, with its own data: what the chain is, the same in every deployment. The shipped
- * configs take theirs with chainData; a test writes its own (ChainData in ./types). In the order of the old global
- * chain list, which the deprecated `chains` and `Symbiosis.chains()` keep.
+ * Every chain that sdk-types knows. The list keeps the order of 0.0.69's global chain list, which the deprecated
+ * `chains` gives (svc-symbiosis-api task rdyrn, State).
  */
 export const CHAIN_DATA: readonly ChainData[] = [
     {
@@ -2042,6 +2041,7 @@ export const CHAIN_DATA: readonly ChainData[] = [
             large: 'https://s2.coinmarketcap.com/static/img/coins/64x64/32196.png',
         },
         kind: 'perp',
+        // Pseudo-chain with no native gas. USDC (6 decimals) is the only relevant unit.
         gasToken: {
             name: 'USDC',
             symbol: 'USDC',
@@ -2067,6 +2067,7 @@ export const CHAIN_DATA: readonly ChainData[] = [
             large: 'https://s2.coinmarketcap.com/static/img/coins/64x64/39125.png',
         },
         kind: 'perp',
+        // Pseudo-chain with no native gas. USDC (6 decimals) is the only relevant unit.
         gasToken: {
             name: 'USDC',
             symbol: 'USDC',
@@ -2313,7 +2314,7 @@ export const CHAIN_DATA: readonly ChainData[] = [
     {
         id: ChainId.SONEIUM_MAINNET,
         name: 'Soneium',
-        explorer: 'https://soneium.blockscout.com/',
+        explorer: 'https://soneium.blockscout.com',
         icons: {
             small: 'https://coin-images.coingecko.com/asset_platforms/images/22200/thumb/soneium-removebg-preview.png?1737099934',
             large: 'https://coin-images.coingecko.com/asset_platforms/images/22200/thumb/soneium-removebg-preview.png?1737099934',
@@ -2582,6 +2583,7 @@ export const CHAIN_DATA: readonly ChainData[] = [
             large: 'https://explorer.mainnet.citrea.xyz/assets/favicon/favicon-48x48.png',
         },
         kind: 'evm',
+        // TODO change the icon, which is Bitcoin's.
         gasToken: {
             name: 'CBTC',
             symbol: 'CBTC',
@@ -2983,6 +2985,7 @@ export const CHAIN_DATA: readonly ChainData[] = [
             large: 'https://coin-images.coingecko.com/asset_platforms/images/32271/large/stable.png?1765196531',
         },
         kind: 'evm',
+        // The native layer uses 18 decimals, but this token models the ERC-20 side, where USDT0 has 6.
         gasToken: {
             name: 'USDT0',
             symbol: 'USDT0',
@@ -3092,7 +3095,7 @@ export const CHAIN_DATA: readonly ChainData[] = [
 
 const byId = new Map(CHAIN_DATA.map((data) => [data.id, data]))
 
-/** A shipped chain's data, for writing a config. Errors for a chain sdk-types does not know. */
+/** Returns the CHAIN_DATA entry of the given chain. Errors when sdk-types has no data for that chain. */
 export function chainData(chainId: ChainId): ChainData {
     const found = byId.get(chainId)
     if (!found) throw new Error(`sdk-types has no data of chain ${chainId}`)

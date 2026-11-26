@@ -36,7 +36,6 @@ export class Token {
     public readonly symbol?: string
     public readonly name?: string
     public readonly chainId: ChainId
-    /** The token's contract address; empty for the chain's gas token. */
     public readonly address: TokenAddress
     public readonly icons?: Icons
     public readonly chainFromId?: ChainId
@@ -47,24 +46,21 @@ export class Token {
         ton?: string
     }
 
-    // Not serialized nor cloned: a deployment's chain leads back to its deployment.
-    // TODO: make it `Chain` when the deprecated `new Token(params)` goes; only that constructor leaves it undefined, for
-    // a chain id the global chain list does not know (svc-symbiosis-api task Trdyrn, step 5).
+    // A chain holds its tokens, and each token holds its chain. The field is private so that copies and JSON leave
+    // this cycle out.
+    // TODO: type it Chain once the deprecated `new Token(params)` goes (svc-symbiosis-api task rdyrn, Step 5).
     readonly #chain: Chain | undefined
 
-    /** A token of `chain`, which `params.chainId` names. */
+    /** A token of `chain`. Errors when `params.chainId` is not `chain.id`. */
     constructor(chain: Chain, params: TokenConstructor)
     /**
-     * @deprecated Pass the token's chain (`new Token(chain, params)`): without it, it is looked up in the global chain
-     * list by `params.chainId`, and a chain the list does not know leaves the token without one.
+     * @deprecated Pass the token's chain (`new Token(chain, params)`). Without it, the token takes its chain from the
+     * global chain list (getChainById).
      */
     constructor(params: TokenConstructor)
     constructor(...args: [Chain, TokenConstructor] | [TokenConstructor]) {
         const [chain, params] = args.length === 2 ? args : [undefined, args[0]]
-        if (chain && chain.id !== params.chainId) {
-            throw new Error(`a token of chain ${params.chainId} given chain ${chain.id}`)
-        }
-        this.#chain = chain ?? getChainById(params.chainId)
+        this.#chain = tokenChain(chain, params)
         validateSolidityTypeInstance(JSBI.BigInt(params.decimals), SolidityType.uint8)
 
         this.decimals = params.decimals
@@ -91,8 +87,9 @@ export class Token {
     }
 
     /**
-     * The token that pools hold for this one: its chain's wrapped gas token for the gas token, else itself. The gas
-     * token of a chain without a wrapped one stays as it is.
+     * Returns the token that pools hold for this one. That is the chain's wrapped gas token when this token is native
+     * (`isNative`) and the chain has one. Otherwise it is the token itself, such as Metis's gas token, which is a
+     * contract.
      */
     public get wrapped(): Token {
         return (this.isNative && this.#chain?.wrappedGasToken) || this
@@ -121,6 +118,16 @@ export class Token {
         invariant(this.address !== other.address, 'ADDRESSES')
         return this.address.toLowerCase() < other.address.toLowerCase()
     }
+
+    /**
+     * Returns the two tokens, or the two amounts of tokens, sorted by the tokens' addresses (sortsBefore). Errors when
+     * the tokens have the same address or are on different chains.
+     */
+    public static sorted<T extends Token | { readonly token: Token }>(a: T, b: T): [T, T] {
+        const tokenOf = (x: T): Token => (x instanceof Token ? x : (x as { readonly token: Token }).token)
+        return tokenOf(a).sortsBefore(tokenOf(b)) ? [a, b] : [b, a]
+    }
+
     get isSynthetic() {
         return !!this.chainFromId
     }
@@ -130,7 +137,10 @@ export class Token {
         return this.#chain
     }
 
-    /** @deprecated Take the chain from a Deployment (`deployment.chain(token.chainFromId)`) instead. */
+    /**
+     * @deprecated Take the chain from a Deployment (`deployment.findChain(chainFromId)` for a synthetic), or use the
+     * synthetic's `original` (SyntheticToken).
+     */
     get chainFrom(): Chain | undefined {
         return getChainById(this.chainFromId)
     }
@@ -149,6 +159,13 @@ export class Token {
         return this.attributes.solana
     }
 }
+
+function tokenChain(chain: Chain | undefined, params: TokenConstructor): Chain | undefined {
+    if (!chain) return getChainById(params.chainId)
+    if (chain.id !== params.chainId) throw new Error(`a token of chain ${params.chainId} given chain ${chain.id}`)
+    return chain
+}
+
 /**
  * Compares two currencies for equality
  */
@@ -156,14 +173,15 @@ export function tokenEquals(tokenA: Token, tokenB: Token): boolean {
     return tokenA.equals(tokenB)
 }
 
-/** @deprecated Use the token's chain's `isTron` (Chain) instead. */
+/** @deprecated Use the chain's kind instead (`token.chain?.kind === 'tron'`). */
 export function isTronToken(token: Token): boolean {
     return token.chain?.kind === 'tron'
 }
 
 /**
- * @deprecated Use the chain's `wrappedGasToken` (Chain), which is undefined on a chain without one. Whether the chain
- * has no wrapped gas token, so that WETH holds a placeholder for it.
+ * Checks whether a chain sdk-types knows has no wrapped gas token (its WETH entry is a placeholder). False for a chain
+ * it does not know.
+ * @deprecated Use the chain's `wrappedGasToken`, which is undefined on a chain without one.
  */
 export function isFakeWETH(chainId: ChainId): boolean {
     const chain = getChainById(chainId)
@@ -171,8 +189,8 @@ export function isFakeWETH(chainId: ChainId): boolean {
 }
 
 /**
- * @deprecated Use the chain's `wrappedGasToken` (Chain) instead; kept for the packages that still use it. A chain without
- * a wrapped gas token has a placeholder here: a token with no address and no decimals.
+ * On a chain without a wrapped gas token, the entry is a placeholder token with no address and no decimals.
+ * @deprecated Use the chain's `wrappedGasToken` (Chain) instead.
  */
 export const WETH = chainTable(
     (chain) => chain.wrappedGasToken ?? new Token(chain, { chainId: chain.id, address: '', decimals: 0 })

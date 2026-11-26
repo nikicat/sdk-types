@@ -1,25 +1,39 @@
+import { getAddress } from '@ethersproject/address'
 import { describe, expect, it } from 'vitest'
+import { ZodError } from 'zod'
 
 import { ChainId } from '../constants'
 import { Token } from '../entities'
 import { chainData } from './chainData'
-import { beta, dev, mainnet } from './config'
+import { beta, dev, mainnet, testnet } from './config'
 import { ConfigCache, Deployment } from './deployment'
 import { SyntheticToken } from './deployedToken'
 import { Symbiosis } from './symbiosis'
-import { parseConfigCacheData } from './config/cache/types'
-import type { ChainData, Config } from './types'
+import { configCacheDataSchema, parseConfigCacheData } from './config/cache/types'
+import { hardhatAddresses, LOCAL, localChainData } from '../testing/localChain.fixture'
+import type { Config } from './types'
 
-const LOCAL = 31337 as ChainId
-const local = (wethAddress: `0x${string}`): ChainData => ({
-    id: LOCAL,
-    name: 'Hardhat',
-    explorer: '',
-    icons: {},
-    kind: 'evm',
-    gasToken: { chainId: LOCAL, address: '', decimals: 18, symbol: 'ETH' },
-    wrappedGasToken: { chainId: LOCAL, address: wethAddress, decimals: 18, symbol: 'WETH' },
-    uniswapV2: { pairs: [] },
+const [LOCAL_WETH, OTHER_LOCAL_WETH] = hardhatAddresses
+const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+const DAI = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
+const POOL_A = '0x6148FD6C649866596C3d8a971fC313E5eCE84882'
+const POOL_B = '0x2d877Fe148dBCB056Bf71ED5232E8d580195c0f1'
+
+const tokenEntry = (id: number, address: string, symbol: string) => ({
+    id,
+    chainId: LOCAL,
+    address,
+    decimals: 18,
+    symbol,
+})
+const pool = (id: number, address: string, tokenIds: number[]) => ({
+    id,
+    chainId: LOCAL,
+    address,
+    oracle: address,
+    generalPurpose: true,
+    coinGeckoId: 'weth',
+    tokens: tokenIds.map((tokenId, index) => ({ index, tokenId })),
 })
 // A deployment of one local chain, built from plain data as a test writes it.
 const localDeployment = (wethAddress: `0x${string}`) => {
@@ -27,12 +41,9 @@ const localDeployment = (wethAddress: `0x${string}`) => {
         ...dev,
         omniPools: [],
         btcConfigs: [],
-        chains: [{ ...dev.chains[0], id: LOCAL, chain: local(wethAddress), rpc: 'http://127.0.0.1:8545' }],
+        chains: [{ ...dev.chains[0], id: LOCAL, chain: localChainData(wethAddress), rpc: 'http://127.0.0.1:8545' }],
     }
-    const cache = parseConfigCacheData({
-        tokens: [{ id: 1, chainId: LOCAL, address: wethAddress, decimals: 18, symbol: 'WETH' }],
-        omniPools: [],
-    })
+    const cache = parseConfigCacheData({ tokens: [tokenEntry(1, wethAddress, 'WETH')], omniPools: [] })
     return new Deployment(config, cache)
 }
 
@@ -47,16 +58,16 @@ describe('Deployment', () => {
     })
 
     it('serves a test’s own chain, and two deployments of one chain id keep their own data', () => {
-        const first = localDeployment('0x5FbDB2315678afecb367f032d93F642f64180aa3')
-        const second = localDeployment('0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512')
-        expect(first.chain(LOCAL).gasToken.wrapped.address).toBe('0x5FbDB2315678afecb367f032d93F642f64180aa3')
-        expect(second.chain(LOCAL).gasToken.wrapped.address).toBe('0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512')
-        expect(first.tokens().map((token) => token.address)).toEqual(['0x5FbDB2315678afecb367f032d93F642f64180aa3'])
+        const first = localDeployment(LOCAL_WETH)
+        const second = localDeployment(OTHER_LOCAL_WETH)
+        expect(first.chain(LOCAL).gasToken.wrapped.address).toBe(LOCAL_WETH)
+        expect(second.chain(LOCAL).gasToken.wrapped.address).toBe(OTHER_LOCAL_WETH)
+        expect(first.tokens().map((token) => token.address)).toEqual([LOCAL_WETH])
         expect(first.chain(LOCAL).config.rpc).toBe('http://127.0.0.1:8545')
     })
 
     it('makes its tokens with its own chains', () => {
-        const deployment = localDeployment('0x5FbDB2315678afecb367f032d93F642f64180aa3')
+        const deployment = localDeployment(LOCAL_WETH)
         const [token] = deployment.tokens()
         expect(token.chain).toBe(deployment.chain(LOCAL))
         expect(
@@ -77,18 +88,17 @@ describe('Deployment', () => {
         expect(() => Deployment.named('staging' as 'mainnet')).toThrow(/Unknown config name/)
     })
 
-    it('gives its own token for any token of the same chain, address and origin', () => {
+    it('gives its own token for any token of the same chain, address and chainFromId', () => {
         const deployment = Deployment.named('mainnet')
         for (const token of deployment.tokens()) {
             const copy = new Token(deployment.chain(token.chainId), token)
-            // the data's first entry of that chain, address and origin (sSIS and sUSDC are listed twice)
             const first = deployment
                 .tokens()
                 .find((other) => other.equals(token) && other.chainFromId === token.chainFromId)
             expect(deployment.token(copy)).toBe(first)
         }
         const eth = deployment.chain(ChainId.ETH_MAINNET)
-        expect(deployment.token(eth.gasToken) ?? deployment.token(eth.gasToken.wrapped)).toBeDefined()
+        expect(deployment.token(eth.gasToken)).toBeDefined()
     })
 
     it('links each synthetic and its original both ways, synthetics of synthetics too', () => {
@@ -98,7 +108,6 @@ describe('Deployment', () => {
             expect(token.original.chainId).toBe(token.chainFromId)
             expect(token.original.synthetics).toContain(token)
         }
-        // sSIS on the Symbiosis chain (#194) is a synthetic of SIS on BSC, itself a synthetic of SIS on Ethereum
         const sisOnBsc = deployment
             .tokens()
             .find(
@@ -112,18 +121,16 @@ describe('Deployment', () => {
     it('keeps the deprecated getRepresentation: a synthetic’s original on the chain, else the synthetic on it', () => {
         const deployment = Deployment.named('mainnet')
         const cache = new ConfigCache('mainnet')
-        for (const token of deployment.tokens()) {
-            for (const { id } of deployment.chains()) {
-                const deployed = deployment.token(token)!
-                const expected =
-                    deployed instanceof SyntheticToken
-                        ? deployed.original.chainId === id
-                            ? deployed.original
-                            : undefined
-                        : deployed.syntheticOn(id)
-                expect(cache.getRepresentation(token, id)?.address).toBe(expected?.address)
-            }
-        }
+        const usdc = deployment
+            .chain(ChainId.ETH_MAINNET)
+            .tokens()
+            .find((token) => token.symbol === 'USDC')!
+        const sUsdc = usdc.syntheticOn(ChainId.SYMBIOSIS_MAINNET)!
+        expect(sUsdc.symbol).toBe('sUSDC')
+        expect(cache.getRepresentation(usdc, ChainId.SYMBIOSIS_MAINNET)).toBe(sUsdc)
+        expect(cache.getRepresentation(sUsdc, ChainId.ETH_MAINNET)).toBe(usdc)
+        expect(cache.getRepresentation(usdc, ChainId.BSC_MAINNET)).toBeUndefined()
+        expect(cache.getRepresentation(sUsdc, ChainId.BSC_MAINNET)).toBeUndefined()
     })
 
     it('gives each pool its tokens, their indexes and its transit tokens, as the deprecated lookups do', () => {
@@ -152,43 +159,64 @@ describe('Deployment', () => {
     })
 
     it('rejects deployment data that does not parse', () => {
-        const token = { id: 1, chainId: LOCAL, address: '0x0000000000000000000000000000000000000001', decimals: 18 }
-        expect(() => parseConfigCacheData({ tokens: [token], omniPools: [] })).not.toThrow()
-        expect(() => parseConfigCacheData({ tokens: [{ ...token, id: -1 }], omniPools: [] })).toThrow()
-        expect(() => parseConfigCacheData({ tokens: [{ ...token, address: 'nope' }], omniPools: [] })).toThrow()
-        expect(() => parseConfigCacheData({ tokens: [token] })).toThrow()
+        const token = tokenEntry(1, WETH, 'WETH')
+        const parse = (data: unknown) => configCacheDataSchema.safeParse(data).success
+        expect(parse({ tokens: [token], omniPools: [] })).toBe(true)
+        expect(parse({ tokens: [{ ...token, id: -1 }], omniPools: [] })).toBe(false)
+        expect(parse({ tokens: [{ ...token, address: 'nope' }], omniPools: [] })).toBe(false)
+        expect(parse({ tokens: [{ ...token, address: WETH.replace('C02', 'c02') }], omniPools: [] })).toBe(false)
+        expect(parse({ tokens: [{ ...token, chainFromId: 1 }], omniPools: [] })).toBe(false)
+        expect(parse({ tokens: [token, { ...token, address: DAI }], omniPools: [] })).toBe(false)
+        expect(parse({ tokens: [token], omniPools: [pool(1, POOL_A, [1, 1])] })).toBe(false)
+        expect(parse({ tokens: [token] })).toBe(false)
+        expect(() => parseConfigCacheData({ tokens: [token] })).toThrow(ZodError)
     })
 
     it('checksums the data’s EVM addresses, and finds its tokens and pools by an address in any case', () => {
-        const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
-        const pool = '0x6148FD6C649866596C3d8a971fC313E5eCE84882'
         const lower = (address: `0x${string}`) => address.toLowerCase() as `0x${string}`
         const data = parseConfigCacheData({
-            tokens: [{ id: 1, chainId: LOCAL, address: weth.toLowerCase(), decimals: 18, symbol: 'WETH' }],
-            omniPools: [
-                {
-                    id: 1,
-                    chainId: LOCAL,
-                    address: pool.toLowerCase(),
-                    oracle: pool.toLowerCase(),
-                    generalPurpose: true,
-                    coinGeckoId: 'weth',
-                    tokens: [{ index: 0, tokenId: 1 }],
-                },
-            ],
+            tokens: [tokenEntry(1, lower(WETH), 'WETH')],
+            omniPools: [pool(1, lower(POOL_A), [1])],
         })
-        expect(data.tokens[0].address).toBe(weth)
-        expect(data.omniPools[0].address).toBe(pool)
-        expect(data.omniPools[0].oracle).toBe(pool)
+        expect(data.tokens[0].address).toBe(WETH)
+        expect(data.omniPools[0].address).toBe(POOL_A)
+        expect(data.omniPools[0].oracle).toBe(POOL_A)
 
-        const deployment = new Deployment(localDeployment(weth).config, data)
+        const deployment = new Deployment(localDeployment(WETH).config, data)
         const chain = deployment.chain(LOCAL)
         const [token] = deployment.tokens()
-        expect(deployment.token(new Token(chain, { chainId: LOCAL, address: lower(weth), decimals: 18 }))).toBe(token)
+        expect(deployment.token(new Token(chain, { chainId: LOCAL, address: lower(WETH), decimals: 18 }))).toBe(token)
         const [omniPool] = deployment.omniPools()
-        expect(new ConfigCache(deployment).getOmniPoolByConfig({ ...omniPool, address: lower(pool) })).toBe(
+        expect(new ConfigCache(deployment).getOmniPoolByConfig({ ...omniPool, address: lower(POOL_A) })).toBe(
             omniPool.info
         )
+    })
+
+    it('builds originals before their synthetics in any order of the data, and errors for originals that form a loop', () => {
+        const synthetic = (id: number, address: string, originalId: number) => ({
+            ...tokenEntry(id, address, `s${id}`),
+            chainFromId: LOCAL,
+            originalId,
+        })
+        const build = (tokens: object[]) =>
+            new Deployment(localDeployment(WETH).config, parseConfigCacheData({ tokens, omniPools: [] }))
+        const ids = (tokens: { info: { id: number } }[]) => tokens.map((token) => token.info.id)
+
+        const deployment = build([
+            synthetic(3, DAI, 2),
+            synthetic(4, POOL_A, 1),
+            synthetic(2, POOL_B, 1),
+            tokenEntry(1, WETH, 'WETH'),
+        ])
+        expect(ids(deployment.tokens())).toEqual([3, 4, 2, 1])
+        expect(ids(deployment.chain(LOCAL).tokens())).toEqual([3, 4, 2, 1])
+        const [s3, , s2, weth] = deployment.tokens()
+        expect(ids(weth.synthetics).sort()).toEqual([2, 4])
+        expect(ids(s2.synthetics)).toEqual([3])
+        expect(s3 instanceof SyntheticToken && s3.original).toBe(s2)
+
+        expect(() => build([synthetic(1, WETH, 2), synthetic(2, DAI, 1)])).toThrow(/form a loop/)
+        expect(() => build([synthetic(1, WETH, 1)])).toThrow(/form a loop/)
     })
 
     it('finds a Tron token by its base58 address', () => {
@@ -203,33 +231,17 @@ describe('Deployment', () => {
     })
 
     describe('with two pools on a local chain', () => {
-        const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
-        const other = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
-        const pool = (id: number, address: string, tokenIds: number[]) => ({
-            id,
-            chainId: LOCAL,
-            address,
-            oracle: address,
-            generalPurpose: true,
-            coinGeckoId: 'weth',
-            tokens: tokenIds.map((tokenId, index) => ({ index, tokenId })),
-        })
         const build = (pools: ReturnType<typeof pool>[]) =>
             new Deployment(
-                localDeployment(weth).config,
+                localDeployment(WETH).config,
                 parseConfigCacheData({
-                    tokens: [
-                        { id: 1, chainId: LOCAL, address: weth, decimals: 18, symbol: 'WETH' },
-                        { id: 2, chainId: LOCAL, address: other, decimals: 18, symbol: 'DAI' },
-                    ],
+                    tokens: [tokenEntry(1, WETH, 'WETH'), tokenEntry(2, DAI, 'DAI')],
                     omniPools: pools,
                 })
             )
-        const first = '0x6148FD6C649866596C3d8a971fC313E5eCE84882'
-        const second = '0x2d877Fe148dBCB056Bf71ED5232E8d580195c0f1'
 
         it('errors for a config whose pools are not the data’s', () => {
-            const deployment = build([pool(1, first, [1]), pool(2, second, [2])])
+            const deployment = build([pool(1, POOL_A, [1]), pool(2, POOL_B, [2])])
             const config = (addresses: string[]) => ({
                 ...deployment.config,
                 omniPools: addresses.map((address) => ({
@@ -238,25 +250,25 @@ describe('Deployment', () => {
                 })),
             })
             const data = deployment.cacheData
-            expect(() => new Deployment(config([first.toLowerCase(), second]), data)).not.toThrow()
-            expect(() => new Deployment(config([second, first]), data)).toThrow(/are not the data's/)
-            expect(() => new Deployment(config([first]), data)).toThrow(/are not the data's/)
+            expect(() => new Deployment(config([POOL_A.toLowerCase(), POOL_B]), data)).not.toThrow()
+            expect(() => new Deployment(config([POOL_B, POOL_A]), data)).toThrow(/are not the data's/)
+            expect(() => new Deployment(config([POOL_A]), data)).toThrow(/are not the data's/)
         })
 
         it('errors for data that lists a pool twice', () => {
-            expect(() => build([pool(1, first, [1]), pool(2, first, [2])])).toThrow(/twice/)
+            expect(() => build([pool(1, POOL_A, [1]), pool(2, POOL_A, [2])])).toThrow(/twice/)
         })
 
         it('errors for data that puts a token in two pools', () => {
-            expect(() => build([pool(1, first, [1]), pool(2, second, [1, 2])])).toThrow(/trades in omni pools/)
+            expect(() => build([pool(1, POOL_A, [1]), pool(2, POOL_B, [1, 2])])).toThrow(/trades in omni pools/)
         })
 
         it('gives the one transit token of a chain, and errors when there are several', () => {
-            const one = build([pool(1, first, [1]), pool(2, second, [2])])
+            const one = build([pool(1, POOL_A, [1]), pool(2, POOL_B, [2])])
             const [wethPool, daiPool] = one.omniPools()
             expect(wethPool.transitToken(LOCAL).symbol).toBe('WETH')
             expect(daiPool.transitToken(LOCAL).symbol).toBe('DAI')
-            const [bothPool] = build([pool(1, first, [1, 2])]).omniPools()
+            const [bothPool] = build([pool(1, POOL_A, [1, 2])]).omniPools()
             expect(() => bothPool.transitToken(LOCAL)).toThrow(/2 transit tokens/)
         })
     })
@@ -268,6 +280,17 @@ describe('Deployment', () => {
         expect(() => usdc.transitToken(usdc.chainId)).toThrow(/Cannot find transitToken/)
         // the deprecated rule gave the chain's first token, whatever its pool
         expect(symbiosis.transitToken(usdc.chainId, usdc).symbol).toBe('WSIS')
+    })
+
+    it('ships its configs with every EVM address checksummed', () => {
+        // a config's ChainData comes from chainData.ts, not from the config
+        const evmAddresses = (value: unknown): string[] => {
+            if (typeof value === 'string') return /^0x[0-9a-fA-F]{40}$/.test(value) ? [value] : []
+            if (typeof value !== 'object' || value === null) return []
+            return Object.entries(value).flatMap(([key, field]) => (key === 'chain' ? [] : evmAddresses(field)))
+        }
+        const addresses = [mainnet, beta, testnet, dev].flatMap(evmAddresses)
+        expect(addresses.filter((address) => address !== getAddress(address))).toEqual([])
     })
 
     it('serializes its tokens as plain tokens', () => {
