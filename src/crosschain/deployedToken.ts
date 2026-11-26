@@ -45,6 +45,14 @@ export class DeployedToken extends Token {
         return this.#synthetics.find((synth) => synth.chainId === chainId)
     }
 
+    /**
+     * The token this one stands for where it is minted from: a synthetic's original, one step back; any other token,
+     * itself.
+     */
+    public get underlying(): DeployedToken {
+        return this
+    }
+
     /** Checks whether the token can enter an omni pool from its chain. A deprecated or synthetic token cannot. */
     public get canTransit(): boolean {
         return !this.isSynthetic && !this.deprecated
@@ -72,6 +80,10 @@ export class SyntheticToken extends DeployedToken {
 
     /** The token this one is minted for, on `chainFromId`. */
     public get original(): DeployedToken {
+        return this.#original
+    }
+
+    public override get underlying(): DeployedToken {
         return this.#original
     }
 }
@@ -143,8 +155,9 @@ export class OmniPool implements OmniPoolConfig {
      * the synthetics that the pool holds, and the pool's own tokens on that chain.
      */
     public transitTokens(chainId: ChainId): DeployedToken[] {
-        const entering = this.tokens.map((token) => (token instanceof SyntheticToken ? token.original : token))
-        return [...new Set(entering)].filter((token) => token.chainId === chainId && token.canTransit)
+        return [...new Set(this.tokens.map((token) => token.underlying))].filter(
+            (token) => token.chainId === chainId && token.canTransit
+        )
     }
 
     /**

@@ -118,6 +118,18 @@ describe('Deployment', () => {
         expect(sisOnBsc!.syntheticOn(ChainId.SYMBIOSIS_MAINNET)?.symbol).toBe('sSIS')
     })
 
+    it('gives each token its underlying token: a synthetic’s original, one step back; any other token, itself', () => {
+        const deployment = Deployment.named('mainnet')
+        for (const token of deployment.tokens()) {
+            expect(token.underlying).toBe(token instanceof SyntheticToken ? token.original : token)
+        }
+        const sisOnBsc = deployment
+            .tokens()
+            .find((token) => token.isSynthetic && token.chainId === ChainId.BSC_MAINNET && token.symbol === 'SIS')!
+        const sSis = sisOnBsc.syntheticOn(ChainId.SYMBIOSIS_MAINNET)!
+        expect(sSis.underlying).toBe(sisOnBsc)
+    })
+
     it('keeps the deprecated getRepresentation: a synthetic’s original on the chain, else the synthetic on it', () => {
         const deployment = Deployment.named('mainnet')
         const cache = new ConfigCache('mainnet')
