@@ -55,8 +55,8 @@ export type EmptyAddress = ''
 export type NonEmptyAddress = EvmAddress | TronAddress | TonAddress | BtcAddress
 export type Address = NonEmptyAddress | EmptyAddress
 /**
- * The checksummed address of a token's contract, in EVM form on Tron too. A native gas token (Token.isNative) has the
- * empty address.
+ * The address of a token's contract in EIP-55 form, converted to EVM form on Tron (README, "Deployments and chains").
+ * A native gas token (`Token.isNative`) has the empty address.
  */
 export type TokenAddress = EvmAddress | EmptyAddress
 
@@ -102,12 +102,25 @@ export interface DepositoryConfig {
  * The data of a chain that is the same in every deployment. A deployment's setup on the chain is its ChainConfig
  * (README, "Deployments and chains").
  */
-export type ChainData = {
+export type ChainData = EvmChainData | BtcChainData | (ChainDataBase & { kind: Exclude<ChainKind, 'evm' | 'btc'> })
+
+export type EvmChainData = ChainDataBase & {
+    kind: 'evm'
+    /** The checksum of mixed-case addresses on this chain, when it is not EIP-55 (README, "Deployments and chains"). */
+    addressChecksum?: 'eip1191'
+}
+
+export type BtcChainData = ChainDataBase & {
+    kind: 'btc'
+    /** The address format of a Bitcoin chain. */
+    btcNetwork: 'bitcoin' | 'testnet' | 'regtest'
+}
+
+type ChainDataBase = {
     id: ChainId
     name: string
     explorer: string
     icons: Icons
-    kind: ChainKind
     gasToken: TokenConstructor
     /** The wrapped gas token, such as WETH, WBNB or WTRX. */
     wrappedGasToken?: TokenConstructor
@@ -115,8 +128,6 @@ export type ChainData = {
     /** The Uniswap V2 factory whose pair addresses are derived (CREATE2), or the pairs' addresses themselves. */
     uniswapV2: { factory: EvmAddress; initCodeHash: string } | { pairs: UniV2PairAddress[] }
     coinGecko?: { platform?: string; gasTokenId?: string }
-    /** The address format of a Bitcoin chain. */
-    btcNetwork?: 'bitcoin' | 'testnet' | 'regtest'
 }
 
 /**

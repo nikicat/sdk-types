@@ -1,8 +1,9 @@
+import { getAddress } from '@ethersproject/address'
 import { describe, expect, it } from 'vitest'
 
 import { ChainId } from '../constants'
 import { chainData } from '../crosschain/chainData'
-import type { ChainData } from '../crosschain/types'
+import type { ChainData, EvmAddress } from '../crosschain/types'
 import { hardhatAddresses, LOCAL, localChainData } from '../testing/localChain.fixture'
 import { Chain } from './chain'
 import { TokenAmount } from './fractions'
@@ -112,5 +113,48 @@ describe('Chain', () => {
             chain.pairAddress(chain.wrappedGasToken!, own)
         )
         expect(pair.liquidityToken.chain).toBe(chain)
+    })
+})
+
+// EIP-1191's own test vectors for RSK Mainnet (chain id 30).
+const RSK_VECTORS: EvmAddress[] = [
+    '0x5aaEB6053f3e94c9b9a09f33669435E7ef1bEAeD',
+    '0xFb6916095cA1Df60bb79ce92cE3EA74c37c5d359',
+    '0xDBF03B407c01E7CD3cBea99509D93F8Dddc8C6FB',
+    '0xD1220A0Cf47c7B9BE7a2e6ba89F429762E7B9adB',
+]
+const eip55 = (address: string) => getAddress(address.toLowerCase())
+
+describe('Chain.parseAddress', () => {
+    const rootstock = new Chain(chainData(ChainId.RSK_MAINNET))
+    const ethereum = new Chain(chainData(ChainId.ETH_MAINNET))
+
+    it("takes the chain's own checksum (EIP-1191 on Rootstock), EIP-55 or lowercase, and returns EIP-55", () => {
+        for (const address of RSK_VECTORS) {
+            const expected = eip55(address)
+            expect(address).not.toBe(expected)
+            expect(rootstock.parseAddress(address)).toBe(expected)
+            expect(rootstock.parseAddress(expected)).toBe(expected)
+            expect(rootstock.parseAddress(address.toLowerCase())).toBe(expected)
+        }
+    })
+
+    it('refuses a mixed-case address with neither checksum valid, and a Rootstock checksum on another chain', () => {
+        const [address] = RSK_VECTORS
+        // The first letter in the other case.
+        const at = address.search(/[a-fA-F]/)
+        const flipped =
+            address[at] === address[at].toUpperCase() ? address[at].toLowerCase() : address[at].toUpperCase()
+        const wrongCase = address.slice(0, at) + flipped + address.slice(at + 1)
+        expect(() => rootstock.parseAddress(wrongCase)).toThrow('is not a valid address')
+        expect(() => ethereum.parseAddress(address)).toThrow('is not a valid address')
+        expect(() => rootstock.parseAddress('')).toThrow()
+    })
+
+    it("parses a token's address too, with the token's chain given or without it", () => {
+        const [address] = RSK_VECTORS
+        const params = { chainId: ChainId.RSK_MAINNET, address, decimals: 18 }
+        expect(new Token(rootstock, params).address).toBe(eip55(address))
+        expect(new Token(params).address).toBe(eip55(address))
     })
 })

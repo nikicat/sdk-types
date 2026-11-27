@@ -1,6 +1,7 @@
 import invariant from 'tiny-invariant'
 
 import { ChainId, type Icons } from '../constants'
+import { parseEvmAddress } from '../utils'
 import type { ChainData, ChainKind, EvmAddress } from '../crosschain/types'
 import { type PairAddressOf, pairAddressesOf } from './pairAddresses'
 import { Token } from './token'
@@ -45,6 +46,18 @@ export class Chain {
         this.gasToken = new Token(this, data.gasToken)
         this.wrappedGasToken = data.wrappedGasToken && new Token(this, data.wrappedGasToken)
         this.pairAddressOf = pairAddressesOf(data)
+    }
+
+    /**
+     * Returns the EIP-55 form of an address given all in lowercase or all in uppercase, in EIP-55, or in the chain's
+     * own checksum (`EvmChainData.addressChecksum`; README, "Deployments and chains"). Errors when the address is empty
+     * or in none of these forms.
+     */
+    public parseAddress(address: string): EvmAddress {
+        return parseEvmAddress(
+            address,
+            this.data.kind === 'evm' && this.data.addressChecksum === 'eip1191' ? this.id : undefined
+        )
     }
 
     /**

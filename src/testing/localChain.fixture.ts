@@ -1,5 +1,5 @@
 import type { ChainId } from '../constants'
-import type { ChainData } from '../crosschain/types'
+import type { EvmChainData } from '../crosschain/types'
 
 // No global table of sdk-types knows this chain, so a test that passes on it reads nothing global.
 export const LOCAL = 31337 as ChainId
@@ -15,8 +15,8 @@ export const hardhatAddresses = [
 // The local Hardhat chain with ETH as its gas token, WETH at `wethAddress` and no Uniswap V2 pairs.
 export const localChainData = (
     wethAddress: `0x${string}` = hardhatAddresses[0],
-    overrides: Partial<ChainData> = {}
-): ChainData => ({
+    overrides: Partial<EvmChainData> = {}
+): EvmChainData => ({
     id: LOCAL,
     name: 'Hardhat',
     explorer: '',

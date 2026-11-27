@@ -13,9 +13,9 @@ describe('CHAIN_DATA', () => {
     })
 
     it('gives a Bitcoin network to the Bitcoin chains only', () => {
-        const withNetwork = CHAIN_DATA.filter((data) => data.btcNetwork !== undefined).map((data) => data.id)
+        const withNetwork = CHAIN_DATA.filter((data) => 'btcNetwork' in data).map((data) => data.id)
         expect(withNetwork.sort()).toEqual([ChainId.BTC_MAINNET, ChainId.BTC_MUTINY, ChainId.BTC_TESTNET4].sort())
-        for (const data of CHAIN_DATA) expect(data.btcNetwork !== undefined).toBe(data.kind === 'btc')
+        for (const data of CHAIN_DATA) expect('btcNetwork' in data).toBe(data.kind === 'btc')
     })
 
     it('gives Stellar, Cardano, Sui and Canton the kind other, not evm', () => {

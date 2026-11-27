@@ -10,7 +10,7 @@ import type { Pair } from './pair'
 import { type BestTradeOptions, type BestTrades, PairGraph } from './pairGraph'
 import { Route } from './route'
 import type { Token } from './token'
-import { tokenEquals, WETH } from './token'
+import { WETH } from './token'
 
 /**
  * Returns the percent difference between the mid price and the execution price, i.e. price impact.
@@ -35,8 +35,8 @@ interface InputOutput {
 // in increasing order. i.e. the best trades have the most outputs for the least inputs and are sorted first
 export function inputOutputComparator(a: InputOutput, b: InputOutput): number {
     // must have same input and output token for comparison
-    invariant(tokenEquals(a.inputAmount.token, b.inputAmount.token), 'INPUT_CURRENCY')
-    invariant(tokenEquals(a.outputAmount.token, b.outputAmount.token), 'OUTPUT_CURRENCY')
+    invariant(a.inputAmount.token.equals(b.inputAmount.token), 'INPUT_CURRENCY')
+    invariant(a.outputAmount.token.equals(b.outputAmount.token), 'OUTPUT_CURRENCY')
     if (a.outputAmount.equalTo(b.outputAmount)) {
         if (a.inputAmount.equalTo(b.inputAmount)) {
             return 0
@@ -158,7 +158,7 @@ export class Trade {
         const amounts: TokenAmount[] = new Array(route.path.length)
         const nextPairs: Pair[] = new Array(route.pairs.length)
         if (tradeType === TradeType.EXACT_INPUT) {
-            invariant(tokenEquals(amount.token, route.input), 'INPUT')
+            invariant(amount.token.equals(route.input), 'INPUT')
             amounts[0] = amount.wrapped
             for (let i = 0; i < route.path.length - 1; i++) {
                 const pair = route.pairs[i]
@@ -167,7 +167,7 @@ export class Trade {
                 nextPairs[i] = swap.pairAfter
             }
         } else {
-            invariant(tokenEquals(amount.token, route.output), 'OUTPUT')
+            invariant(amount.token.equals(route.output), 'OUTPUT')
             amounts[amounts.length - 1] = amount.wrapped
             for (let i = route.path.length - 1; i > 0; i--) {
                 const pair = route.pairs[i - 1]

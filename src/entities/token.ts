@@ -5,7 +5,7 @@ import type { Address, TokenAddress } from '..'
 import type { Icons } from '../constants'
 import { ChainId, SolidityType } from '../constants'
 import { tronAddressToEvm } from '../crypto/tronAddress'
-import { validateAndParseAddress, validateSolidityTypeInstance } from '../utils'
+import { parseEvmAddress, validateSolidityTypeInstance } from '../utils'
 import type { Chain } from './chain'
 import { getChainById } from './chainList'
 import { chainTable } from './chainTable'
@@ -74,9 +74,7 @@ export class Token<C extends Chain | undefined = Chain | undefined> {
         this.deprecated = !!params.deprecated
         this.attributes = params.attributes
 
-        // A Tron address (base58 or hex) is kept in its EVM form; either way the address is checksummed.
-        const address = this.#chain?.kind === 'tron' ? tronAddressToEvm(params.address) : params.address
-        this.address = validateAndParseAddress(address)
+        this.address = tokenAddress(this.#chain, params.address)
     }
 
     public toString(): string {
@@ -99,12 +97,8 @@ export class Token<C extends Chain | undefined = Chain | undefined> {
         return ((this.isNative && this.#chain?.wrappedGasToken) || this) as Token<C>
     }
 
-    /**
-     * Returns true if the two tokens are equivalent, i.e. have the same chainId and address.
-     * @param other other token to compare
-     */
+    /** Returns true if the two tokens have the same chain id and address. */
     public equals(other: Token): boolean {
-        // short circuit on reference equality
         if (this === other) {
             return true
         }
@@ -112,10 +106,8 @@ export class Token<C extends Chain | undefined = Chain | undefined> {
     }
 
     /**
-     * Returns true if the address of this token sorts before the address of the other token
-     * @param other other token to compare
-     * @throws if the tokens have the same address
-     * @throws if the tokens are on different chains
+     * Checks whether this token's address sorts before the other's. Errors when the tokens have the same address or
+     * are on different chains.
      */
     public sortsBefore(other: Token): boolean {
         invariant(this.chainId === other.chainId, 'CHAIN_IDS')
@@ -171,8 +163,16 @@ function tokenChain(chain: Chain | undefined, params: TokenConstructor): Chain |
 }
 
 /**
- * Compares two currencies for equality
+ * Returns a token's address parsed by `chain.parseAddress`, or by EIP-55 alone when sdk-types does not know the chain,
+ * and keeps a gas token's empty address (README, "Deployments and chains"). Errors when that parse refuses the address.
  */
+function tokenAddress(chain: Chain | undefined, address: Address): TokenAddress {
+    if (address === '') return address
+    const evm = chain?.kind === 'tron' ? tronAddressToEvm(address) : address
+    return chain ? chain.parseAddress(evm) : parseEvmAddress(evm)
+}
+
+/** @deprecated Use `token.equals(other)`. */
 export function tokenEquals(tokenA: Token, tokenB: Token): boolean {
     return tokenA.equals(tokenB)
 }

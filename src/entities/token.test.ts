@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { ChainId } from '../constants'
+import type { Address } from '../crosschain/types'
 import { Deployment, type DeployedChain } from '../crosschain/deployment'
 import type { DeployedToken } from '../crosschain/deployedToken'
 import { TokenAmount } from './fractions'
@@ -63,5 +64,21 @@ describe('a token knows its chain', () => {
         expectTypeOf<Token>().not.toExtend<Token<Chain>>()
         expectTypeOf<Token<Chain>>().not.toExtend<Token<DeployedChain>>()
         expect(new Token(USDC).equals(new Token(ethereum, USDC))).toBe(true)
+    })
+})
+
+describe('a token of a chain sdk-types does not know', () => {
+    const unknown = { ...USDC, chainId: 999_999_999 as ChainId }
+
+    it('has its address checksummed by EIP-55, and keeps an empty one', () => {
+        expect(new Token(unknown).chain).toBeUndefined()
+        const lowercase = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+        expect(new Token({ ...unknown, address: lowercase }).address).toBe(USDC.address)
+        expect(new Token({ ...unknown, address: '' }).address).toBe('')
+    })
+
+    it('errors on an address that is not 0x', () => {
+        // Raw input that no address type admits.
+        expect(() => new Token({ ...unknown, address: 'not an address' as Address })).toThrow()
     })
 })

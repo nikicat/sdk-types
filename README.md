@@ -23,6 +23,13 @@ config with a consumer's own overrides. Its chains carry the behaviour that used
 `new PairGraph(chain, pairs).bestTradesExactIn(amountIn, tokenOut)`, or `bestTradesExactOut`. A token carries its
 chain (`new Token(chain, data)`, `token.chain`), so it wraps itself: `token.wrapped` and `amount.wrapped`.
 
+A token keeps its address in EIP-55 form (`TokenAddress`), so `token.equals` and a deployment's lookups compare
+addresses exactly. An address from outside, such as a user's, goes through `chain.parseAddress`, which also
+takes the chain's own checksum (`EvmChainData.addressChecksum`), because that chain's explorers and wallets show
+addresses in it. A token's address goes through `chain.parseAddress` too when sdk-types knows the token's chain,
+and a gas token keeps its empty address. Addresses are not simply lowercased, because that would drop the checksum's
+check for typos.
+
 A deployment's tokens (`DeployedToken`, `SyntheticToken`) and omni pools (`OmniPool`) are objects linked to each
 other. A token holds its synthetics, and a synthetic holds its original. A token does not refer to its pool, so the
 deployment finds the pool: `deployment.omniPoolOf(token)`. The class docs in `crosschain/deployedToken.ts` describe
@@ -33,9 +40,10 @@ carries the deployment's setup as `config` (`chain.config.dexFee`, `chain.config
 kind (`chain.kind`). A deployment with other RPCs or limits is a `new Deployment` of that config.
 
 A deployment's token and pool data (`ConfigCacheData`) is parsed, not cast. `parseConfigCacheData(json)` errors on
-data that does not fit. It gives the ids their branded types, and its EVM addresses come out checksummed.
+data that does not fit. It gives the ids their branded types, and its EVM addresses come out in EIP-55 form.
 It errors on two tokens with one id, on a pool that lists a token twice, on a token with only one of `originalId` and
-`chainFromId`, and on a mixed-case EVM address with a wrong checksum. It drops the keys it does not know.
+`chainFromId`, and on a mixed-case EVM address without a valid EIP-55 checksum. It takes no chain's own checksum, since
+the cache is generated. It drops the keys it does not know.
 
 ### Upgrading from 0.0.x
 
@@ -57,6 +65,7 @@ replacement. These are deprecated:
 - `Trade.bestTradeExactIn`, `Trade.bestTradeExactOut` and `computeTradePriceBreakdown`.
 - `ConfigCache`, `Symbiosis` and the `Id` type (a `number`).
 - `normalizeRecipientAddress`.
+- `tokenEquals`.
 - `MapWithDefault`, which nothing in the package uses any more. It has no replacement.
 - `chain.disabled` (always false) and `chain.swappable` (always true).
 

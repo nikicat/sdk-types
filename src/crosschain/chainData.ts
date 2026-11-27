@@ -1673,6 +1673,7 @@ export const CHAIN_DATA: readonly ChainData[] = [
             large: 'https://rootstock.blockscout.com/assets/favicon/favicon.ico',
         },
         kind: 'evm',
+        addressChecksum: 'eip1191',
         gasToken: {
             name: 'RBTC',
             symbol: 'RBTC',
