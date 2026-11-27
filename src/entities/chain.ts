@@ -31,9 +31,9 @@ export class Chain {
      * The token that pays for gas, such as ETH or BNB. Its address is empty unless the gas token is also a contract,
      * such as Metis's.
      */
-    public readonly gasToken: Token
+    public readonly gasToken: Token<this>
     /** The wrapped gas token, such as WETH, WBNB or WTRX. */
-    public readonly wrappedGasToken?: Token
+    public readonly wrappedGasToken?: Token<this>
     private readonly pairAddressOf: PairAddressOf
 
     public constructor(public readonly data: ChainData) {

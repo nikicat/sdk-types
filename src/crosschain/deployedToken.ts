@@ -1,7 +1,8 @@
 import { getAddress } from '@ethersproject/address'
 
 import type { ChainId } from '../constants'
-import { type Chain, Token } from '../entities'
+import { Token } from '../entities'
+import type { DeployedChain } from './deployment'
 import { NoTransitTokenError, SdkError } from '../errors'
 import type { OmniPoolInfo, OmniPoolTokenIndex, TokenInfo } from './config/cache/types'
 import type { EvmAddress, OmniPoolCoinGeckoId, OmniPoolConfig } from './types'
@@ -12,7 +13,7 @@ let addSynthetic: (original: DeployedToken, synthetic: SyntheticToken) => void
  * A token does not refer to the pools that hold it, to avoid a cycle. Deployment.omniPoolOf finds its pool
  * (svc-symbiosis-api task rdyrn, State).
  */
-export class DeployedToken extends Token {
+export class DeployedToken extends Token<DeployedChain> {
     // Not serialized: it is the deployment's data.
     readonly #info: TokenInfo
     readonly #synthetics: SyntheticToken[] = []
@@ -22,7 +23,7 @@ export class DeployedToken extends Token {
     }
 
     /** @internal Built by its Deployment. */
-    public constructor(chain: Chain, info: TokenInfo) {
+    public constructor(chain: DeployedChain, info: TokenInfo) {
         super(chain, info)
         this.#info = info
     }
@@ -67,7 +68,7 @@ export class SyntheticToken extends DeployedToken {
      * @internal Built by its Deployment, after its original, to whose synthetics it adds itself. Errors when the
      * original is not on its chainFromId.
      */
-    public constructor(chain: Chain, info: TokenInfo, original: DeployedToken) {
+    public constructor(chain: DeployedChain, info: TokenInfo, original: DeployedToken) {
         super(chain, info)
         if (original.chainId !== this.chainFromId) {
             throw new SdkError(

@@ -28,10 +28,11 @@ export type TokenConstructor = {
 }
 
 /**
- * A token is any fungible financial instrument on Ethereum.
- *
+ * A fungible token on its chain. `C` is what is known of the chain: a token built on a chain (`new Token(chain, params)`)
+ * is a `Token<Chain>` or a `Token<DeployedChain>`, whose `chain` is always there; a plain `Token` is any token, and its
+ * chain may be unknown (svc-symbiosis-api task rdyrn, step 2d).
  */
-export class Token {
+export class Token<C extends Chain | undefined = Chain | undefined> {
     public readonly decimals: number
     public readonly symbol?: string
     public readonly name?: string
@@ -48,19 +49,19 @@ export class Token {
 
     // A chain holds its tokens, and each token holds its chain. The field is private so that copies and JSON leave
     // this cycle out.
-    // TODO: type it Chain once the deprecated `new Token(params)` goes (svc-symbiosis-api task rdyrn, Step 5).
-    readonly #chain: Chain | undefined
+    readonly #chain: C
 
     /** A token of `chain`. Errors when `params.chainId` is not `chain.id`. */
-    constructor(chain: Chain, params: TokenConstructor)
+    constructor(chain: C, params: TokenConstructor)
     /**
      * @deprecated Pass the token's chain (`new Token(chain, params)`). Without it, the token takes its chain from the
      * global chain list (getChainById).
      */
     constructor(params: TokenConstructor)
-    constructor(...args: [Chain, TokenConstructor] | [TokenConstructor]) {
+    constructor(...args: [C, TokenConstructor] | [TokenConstructor]) {
         const [chain, params] = args.length === 2 ? args : [undefined, args[0]]
-        this.#chain = tokenChain(chain, params)
+        // Without a chain, C is the default, which allows undefined.
+        this.#chain = tokenChain(chain, params) as C
         validateSolidityTypeInstance(JSBI.BigInt(params.decimals), SolidityType.uint8)
 
         this.decimals = params.decimals
@@ -91,8 +92,11 @@ export class Token {
      * (`isNative`) and the chain has one. Otherwise it is the token itself, such as Metis's gas token, which is a
      * contract.
      */
-    public get wrapped(): Token {
-        return (this.isNative && this.#chain?.wrappedGasToken) || this
+    public get wrapped(): Token<C> {
+        // A chain builds its wrapped gas token on itself, so it is a Token<C>. TypeScript keeps that (Chain's
+        // `Token<this>`) only through a chain type without undefined; the cast goes with `new Token(params)` (rdyrn,
+        // step 5).
+        return ((this.isNative && this.#chain?.wrappedGasToken) || this) as Token<C>
     }
 
     /**
@@ -133,7 +137,7 @@ export class Token {
     }
 
     /** The token's chain; undefined only for a token built without one (deprecated) on a chain sdk-types does not know. */
-    get chain(): Chain | undefined {
+    get chain(): C {
         return this.#chain
     }
 
