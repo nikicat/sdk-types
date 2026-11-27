@@ -20,8 +20,6 @@ Each of these changes the shape of `ChainData` and its 88 entries, so they are b
   the 53 sentinels, and have `pairAddressesOf` error for a chain without it.
 - **The CREATE2 formula is decided in code** (b4-32, b6-11, cross-24). `pairAddressesOf` picks zkSync's formula by one
   chain id. The factory variant could carry it (`create2: 'zksync'`), set on Cronos zkEVM's data.
-- **btcNetwork belongs to Bitcoin chains only** (b5-13, b6-6, cross-28). Make `ChainData` a union on `kind`, with
-  `btcNetwork` required on the `btc` member and absent on the others.
 - **Each gas token repeats its chain id** (b6-2, cross-29). The 157 gas and wrapped gas tokens restate their entry's id
   as `chainId`. A gas-token type without `chainId`, filled in by `Chain`, removes the copies and the mismatch.
 - **"None" spelled as a value** (b6-5, b6-7, cross-30). HECO, OKEX and Solana give `multicall` as the zero address, and
