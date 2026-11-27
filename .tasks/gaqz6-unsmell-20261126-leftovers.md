@@ -27,8 +27,6 @@ Each of these changes the shape of `ChainData` and its 88 entries, so they are b
 - **Placeholder wrapped gas tokens** (b6-8, b6-9). Symbiosis testnet's WTVT is at the zero address, and on Stable and
   Arc the wrapped gas token is the gas token's own contract under another name. Drop them or describe each contract
   once; this changes `isFakeWETH` and the deprecated `WETH` for those chains.
-- **ChainData is not parsed** (b6-10). Unlike the config cache data, a consumer's or a test's `ChainData` reaches `Chain`
-  unchecked. A zod schema that checksums its addresses would do it at the edge.
 
 ## Shipped configs
 
@@ -56,8 +54,6 @@ Each of these changes the shape of `ChainData` and its 88 entries, so they are b
 
 - **TokenAddress '' means a gas token** (b5-24). A union (`{ kind: 'gas' } | { kind: 'contract'; address }`) or one
   `Token.isGasToken` that owns the rule.
-- **ChainConfig's old contract fields are typed Address** (b5-26). Narrow them to `EvmAddress`, with a type-check of
-  the consumers.
 - **SwapExactInParams has three-state fields** (b5-27). `signature` and `limits` use `?: T | null`, explained by
   comments. A union, or drop the legacy fallback.
 

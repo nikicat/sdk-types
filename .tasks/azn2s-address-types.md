@@ -27,13 +27,23 @@ are banned outside the parsers, and svc-symbiosis-api builds on them.
 - It lands in sdk-types 0.1.0 (symbiosis-finance/sdk-types#31), before that release, so the change to `EvmAddress`
   ships with 0.1.0's other breaking changes; svc-symbiosis-api adapts in its PR #262, with its task Thtyxe (Rootstock
   addresses), which becomes a case of this one (user, 2026-11-27).
+- Data literals stay plain and are branded when parsed (user, 2026-11-27, option 1): a deployment's data is written
+  with `` `0x${string}` `` strings, and one zod schema per data type parses it whole when the `Deployment` or `Chain`
+  is built, giving the written type (`z.input`) and the branded type code reads (`z.output`). Rejected: an `evm('0x…')`
+  helper at each of the data's literals, which rewrites hundreds of lines. This also does gaqz6's "ChainData is not
+  parsed".
 - The piecemeal fixes that the unsmell run of 2026-11-27 proposed for `string`-typed address helpers are done here
   instead, in the final shape (user, 2026-11-27).
 
 ## State
 
-Done towards it (unsmell run of 2026-11-27, on top of the Rootstock change): `parseEvmAddress` (src/utils.ts) and
-`Chain.parseAddress` are the EVM parsers; `TokenAddress`'s doc owns "a token's address is in EIP-55 form".
+The EVM type is done in e9f6c49 (2026-11-27): `src/addresses.ts` (the brand, `EvmAddressText`, the parsers,
+`evmAddressSchema`, `onChain` for a chain's own checksum in data), zod schemas in src/crosschain/types.ts giving
+`…Input` (written) and the parsed types, `CHAIN_DATA` and `new Deployment` parsing once, `Chain.formatAddress`, and
+ESLint banning casts outside src/addresses.ts. Shipped data is the same, except 76 ChainData multicall/factory values
+that are now EIP-55. svc-symbiosis-api has 46 new type errors against it (literals typed EvmAddress in tests,
+comparisons with `AddressZero`, sentinel literals as TokenAddress), listed in the run's notes. Open: zod drops field
+docs from the published `.d.ts`, which grows to about 1,900 lines.
 
 Found by that run's sweep (`.git/unsmell/20261127-125751/findings/sweep-1.yaml`, local only; ids below):
 
