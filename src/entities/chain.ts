@@ -1,8 +1,8 @@
 import invariant from 'tiny-invariant'
 
+import { eip1191ChainIdOf, type EvmAddress, formatEip1191, parseEvmAddress } from '../addresses'
 import { ChainId, type Icons } from '../constants'
-import { parseEvmAddress } from '../utils'
-import type { ChainData, ChainKind, EvmAddress } from '../crosschain/types'
+import type { ChainData, ChainKind } from '../crosschain/types'
 import { type PairAddressOf, pairAddressesOf } from './pairAddresses'
 import { Token } from './token'
 
@@ -54,10 +54,16 @@ export class Chain {
      * or in none of these forms.
      */
     public parseAddress(address: string): EvmAddress {
-        return parseEvmAddress(
-            address,
-            this.data.kind === 'evm' && this.data.addressChecksum === 'eip1191' ? this.id : undefined
-        )
+        return parseEvmAddress(address, eip1191ChainIdOf(this.data))
+    }
+
+    /**
+     * Returns the address in the chain's own spelling, for display: EIP-1191 on a chain whose addresses take it
+     * (`EvmChainData.addressChecksum`), else EIP-55 (README, "Addresses").
+     */
+    public formatAddress(address: EvmAddress): string {
+        const eip1191ChainId = eip1191ChainIdOf(this.data)
+        return eip1191ChainId === undefined ? address : formatEip1191(address, eip1191ChainId)
     }
 
     /**

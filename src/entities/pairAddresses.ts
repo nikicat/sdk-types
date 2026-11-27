@@ -1,11 +1,12 @@
-import { getAddress, getCreate2Address as getEvmCreate2Address } from '@ethersproject/address'
+import { getCreate2Address as getEvmCreate2Address } from '@ethersproject/address'
 import { concat, hexDataSlice, hexZeroPad } from '@ethersproject/bytes'
 import { keccak256 as keccak256Bytes } from '@ethersproject/keccak256'
 import { keccak256, pack } from '@ethersproject/solidity'
 import { toUtf8Bytes } from '@ethersproject/strings'
 
+import { type EvmAddress, parseEvmAddress } from '../addresses'
 import { ChainId } from '../constants'
-import type { BytesLike, ChainData, EvmAddress, TokenAddress } from '../crosschain/types'
+import type { BytesLike, ChainData, TokenAddress } from '../crosschain/types'
 import { memoize2 } from '../utils'
 
 /**
@@ -22,13 +23,11 @@ export type PairAddressOf = (token0: TokenAddress, token1: TokenAddress) => EvmA
 export function pairAddressesOf(data: ChainData): PairAddressOf {
     const { uniswapV2 } = data
     if ('pairs' in uniswapV2) {
-        // checksummed here, as the data's token and pair addresses can come in any case
-        const known = uniswapV2.pairs.map(({ token0, token1, pair }) => ({
-            tokens: [getAddress(token0), getAddress(token1)],
-            pair: getAddress(pair) as EvmAddress,
-        }))
         return (token0, token1) => {
-            const found = known.find(({ tokens }) => tokens.includes(token0) && tokens.includes(token1))
+            const found = uniswapV2.pairs.find((pair) => {
+                const tokens: TokenAddress[] = [pair.token0, pair.token1]
+                return tokens.includes(token0) && tokens.includes(token1)
+            })
             if (!found) throw new Error(`no Uniswap V2 pair of ${token0} and ${token1} on chain ${data.id}`)
             return found.pair
         }
@@ -38,7 +37,8 @@ export function pairAddressesOf(data: ChainData): PairAddressOf {
             ? getTronCreate2Address
             : data.id === ChainId.CRONOS_ZK_MAINNET
               ? getZkCreate2Address
-              : (getEvmCreate2Address as (from: EvmAddress, salt: BytesLike, initCodeHash: BytesLike) => EvmAddress)
+              : (from: EvmAddress, salt: BytesLike, initCodeHash: BytesLike) =>
+                    parseEvmAddress(getEvmCreate2Address(from, salt, initCodeHash))
     return memoize2((token0: TokenAddress, token1: TokenAddress) =>
         create2(
             uniswapV2.factory,
@@ -49,7 +49,7 @@ export function pairAddressesOf(data: ChainData): PairAddressOf {
 }
 
 function addressOfHash(parts: BytesLike[]): EvmAddress {
-    return getAddress(hexDataSlice(keccak256Bytes(concat(parts)), 12)) as EvmAddress
+    return parseEvmAddress(hexDataSlice(keccak256Bytes(concat(parts)), 12))
 }
 
 // zkSync Era's CREATE2: keccak256(keccak256("zksyncCreate2") ‖ sender ‖ salt ‖ bytecodeHash ‖
@@ -67,5 +67,5 @@ export function getZkCreate2Address(from: EvmAddress, salt: BytesLike, initCodeH
 
 /** Returns Tron's CREATE2 address, which hashes 0x41 in front of the sender. */
 function getTronCreate2Address(from: EvmAddress, salt: BytesLike, initCodeHash: BytesLike): EvmAddress {
-    return addressOfHash(['0x41', getAddress(from), salt, initCodeHash])
+    return addressOfHash(['0x41', from, salt, initCodeHash])
 }

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
+import { parseEvmAddress } from '../addresses'
 import { ChainId } from '../constants'
 import { hardhatAddresses } from '../testing/localChain.fixture'
 import { TokenAmount } from './fractions'
 import { Pair } from './pair'
 import { Token } from './token'
 
-const [tokenA, tokenB, local] = hardhatAddresses
+const [tokenA, tokenB] = hardhatAddresses
+const local = parseEvmAddress(hardhatAddresses[2])
 
 const token = (chainId: ChainId, address: `0x${string}`) => new Token({ address, chainId, decimals: 18, symbol: 'T' })
 const amount = (chainId: ChainId, address: `0x${string}`, raw: number) =>

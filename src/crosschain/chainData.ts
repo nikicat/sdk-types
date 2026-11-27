@@ -1,11 +1,10 @@
-import { ChainId } from '../constants'
-import type { ChainData } from './types'
+import { z } from 'zod'
 
-/**
- * Every chain that sdk-types knows. The list keeps the order of 0.0.69's global chain list, which the deprecated
- * `chains` gives (svc-symbiosis-api task rdyrn, State).
- */
-export const CHAIN_DATA: readonly ChainData[] = [
+import { ChainId } from '../constants'
+import { type ChainData, type ChainDataInput, chainDataSchema } from './types'
+
+// The data as written; CHAIN_DATA is its parse.
+const CHAIN_DATA_INPUT: readonly ChainDataInput[] = [
     {
         id: ChainId.TON_MAINNET,
         name: 'TON',
@@ -3093,6 +3092,12 @@ export const CHAIN_DATA: readonly ChainData[] = [
         coinGecko: { platform: 'x-layer', gasTokenId: 'okb' },
     },
 ]
+
+/**
+ * Every chain that sdk-types knows, parsed when this module loads. The list keeps the order of 0.0.69's global chain
+ * list, which the deprecated `chains` gives (svc-symbiosis-api task rdyrn, State).
+ */
+export const CHAIN_DATA: readonly ChainData[] = z.array(chainDataSchema).parse(CHAIN_DATA_INPUT)
 
 const byId = new Map(CHAIN_DATA.map((data) => [data.id, data]))
 

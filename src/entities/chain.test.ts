@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ChainId } from '../constants'
 import { chainData } from '../crosschain/chainData'
-import type { ChainData, EvmAddress } from '../crosschain/types'
+import type { ChainData, EvmAddressText } from '../crosschain/types'
 import { hardhatAddresses, LOCAL, localChainData } from '../testing/localChain.fixture'
 import { Chain } from './chain'
 import { TokenAmount } from './fractions'
@@ -117,7 +117,7 @@ describe('Chain', () => {
 })
 
 // EIP-1191's own test vectors for RSK Mainnet (chain id 30).
-const RSK_VECTORS: EvmAddress[] = [
+const RSK_VECTORS: EvmAddressText[] = [
     '0x5aaEB6053f3e94c9b9a09f33669435E7ef1bEAeD',
     '0xFb6916095cA1Df60bb79ce92cE3EA74c37c5d359',
     '0xDBF03B407c01E7CD3cBea99509D93F8Dddc8C6FB',
@@ -125,7 +125,7 @@ const RSK_VECTORS: EvmAddress[] = [
 ]
 const eip55 = (address: string) => getAddress(address.toLowerCase())
 
-describe('Chain.parseAddress', () => {
+describe('Chain.parseAddress and formatAddress', () => {
     const rootstock = new Chain(chainData(ChainId.RSK_MAINNET))
     const ethereum = new Chain(chainData(ChainId.ETH_MAINNET))
 
@@ -149,6 +149,14 @@ describe('Chain.parseAddress', () => {
         expect(() => rootstock.parseAddress(wrongCase)).toThrow('is not a valid address')
         expect(() => ethereum.parseAddress(address)).toThrow('is not a valid address')
         expect(() => rootstock.parseAddress('')).toThrow()
+    })
+
+    it("formats an address in the chain's own checksum: EIP-1191's vectors on Rootstock, EIP-55 elsewhere", () => {
+        for (const address of RSK_VECTORS) {
+            const parsed = rootstock.parseAddress(address)
+            expect(rootstock.formatAddress(parsed)).toBe(address)
+            expect(ethereum.formatAddress(parsed)).toBe(eip55(address))
+        }
     })
 
     it("parses a token's address too, with the token's chain given or without it", () => {

@@ -1,9 +1,8 @@
-import { getAddress, isAddress } from '@ethersproject/address'
 import { z } from 'zod'
 
-import type { ChainId } from '../../../constants'
+import { evmAddressSchema } from '../../../addresses'
 import type { TokenConstructor } from '../../../entities'
-import { type Address, type EvmAddress, OMNI_POOL_COIN_GECKO_IDS, type OmniPoolConfig } from '../../types'
+import { type Address, chainIdSchema, type OmniPoolConfig, omniPoolConfigSchema } from '../../types'
 
 // The parse checksums EVM addresses, so the objects compare them exactly (svc-symbiosis-api task rdyrn, State).
 
@@ -11,11 +10,6 @@ import { type Address, type EvmAddress, OMNI_POOL_COIN_GECKO_IDS, type OmniPoolC
 // field added to T does not compile until the schema reads it too.
 type Shape<T> = { [K in keyof T]-?: z.core.$ZodType<T[K]> }
 
-const chainIdSchema = z.custom<ChainId>((value) => Number.isInteger(value), 'a chain id')
-const evmAddressSchema = z
-    .string()
-    .refine((value) => /^0x[0-9a-fA-F]{40}$/.test(value) && isAddress(value), 'an EVM address')
-    .transform((address) => getAddress(address) as EvmAddress)
 // A token's address: an EVM address, another chain's address (Tron, TON, Bitcoin) as it is, or empty for a gas token.
 const addressSchema = z.union([
     evmAddressSchema,
@@ -87,17 +81,12 @@ export type OmniPoolInfo = OmniPoolConfig & {
     tokens: OmniPoolToken[]
 }
 
-export const omniPoolInfoSchema = z.object({
+export const omniPoolInfoSchema = omniPoolConfigSchema.extend({
     id: omniPoolIdSchema,
-    chainId: chainIdSchema,
-    address: evmAddressSchema,
-    oracle: evmAddressSchema,
-    generalPurpose: z.boolean(),
-    coinGeckoId: z.enum(OMNI_POOL_COIN_GECKO_IDS),
     tokens: z
         .array(omniPoolTokenSchema)
         .refine((tokens) => unique(tokens.map((token) => token.tokenId)), 'unique token ids'),
-} satisfies Shape<OmniPoolInfo>)
+}) satisfies z.ZodType<OmniPoolInfo>
 
 export type ConfigCacheData = {
     tokens: TokenInfo[]

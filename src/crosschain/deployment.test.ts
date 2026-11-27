@@ -11,7 +11,7 @@ import { SyntheticToken } from './deployedToken'
 import { Symbiosis } from './symbiosis'
 import { configCacheDataSchema, parseConfigCacheData } from './config/cache/types'
 import { hardhatAddresses, LOCAL, localChainData } from '../testing/localChain.fixture'
-import type { Config } from './types'
+import { type ConfigInput, configSchema, parseEvmAddress } from './types'
 
 const [LOCAL_WETH, OTHER_LOCAL_WETH] = hardhatAddresses
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
@@ -37,7 +37,7 @@ const pool = (id: number, address: string, tokenIds: number[]) => ({
 })
 // A deployment of one local chain, built from plain data as a test writes it.
 const localDeployment = (wethAddress: `0x${string}`) => {
-    const config: Config = {
+    const config: ConfigInput = {
         ...dev,
         omniPools: [],
         btcConfigs: [],
@@ -50,7 +50,8 @@ const localDeployment = (wethAddress: `0x${string}`) => {
 describe('Deployment', () => {
     it('gives the shipped deployments’ chains with their configs', () => {
         const eth = Deployment.named('mainnet').chain(ChainId.ETH_MAINNET)
-        expect(eth.config).toBe(mainnet.chains.find((chainConfig) => chainConfig.id === ChainId.ETH_MAINNET))
+        const parsed = Deployment.named('mainnet').config.chains
+        expect(eth.config).toBe(parsed.find((chainConfig) => chainConfig.id === ChainId.ETH_MAINNET))
         expect(eth.name).toBe('Ethereum')
         expect(Deployment.named('mainnet').chains()).toHaveLength(mainnet.chains.length)
         expect(() => Deployment.named('mainnet').chain(LOCAL)).toThrow()
@@ -78,13 +79,13 @@ describe('Deployment', () => {
     })
 
     it('errors for a chain config that holds another chain’s data', () => {
-        const config: Config = { ...dev, chains: [{ ...dev.chains[0], chain: chainData(ChainId.ETH_MAINNET) }] }
+        const config: ConfigInput = { ...dev, chains: [{ ...dev.chains[0], chain: chainData(ChainId.ETH_MAINNET) }] }
         expect(() => new Deployment(config, Deployment.named('dev').cacheData)).toThrow(/holds the data of chain/)
     })
 
     it('gives the shipped deployments by name, and errors for another name', () => {
-        expect(Deployment.named('mainnet').config).toBe(mainnet)
-        expect(Deployment.named('beta').config).toBe(beta)
+        expect(Deployment.named('mainnet').config).toEqual(configSchema.parse(mainnet))
+        expect(Deployment.named('beta').config).toEqual(configSchema.parse(beta))
         expect(() => Deployment.named('staging' as 'mainnet')).toThrow(/Unknown config name/)
     })
 
@@ -199,9 +200,9 @@ describe('Deployment', () => {
         const [token] = deployment.tokens()
         expect(deployment.token(new Token(chain, { chainId: LOCAL, address: lower(WETH), decimals: 18 }))).toBe(token)
         const [omniPool] = deployment.omniPools()
-        expect(new ConfigCache(deployment).getOmniPoolByConfig({ ...omniPool, address: lower(POOL_A) })).toBe(
-            omniPool.info
-        )
+        expect(
+            new ConfigCache(deployment).getOmniPoolByConfig({ ...omniPool, address: parseEvmAddress(lower(POOL_A)) })
+        ).toBe(omniPool.info)
     })
 
     it('builds originals before their synthetics in any order of the data, and errors for originals that form a loop', () => {

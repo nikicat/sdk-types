@@ -14,7 +14,16 @@ import { config as dev } from './config/dev'
 import { config as mainnet } from './config/mainnet'
 import { config as testnet } from './config/testnet'
 import { DeployedToken, OmniPool, SyntheticToken } from './deployedToken'
-import type { ChainConfig, Config, ConfigCacheData, OmniPoolConfig, TokenAddress } from './types'
+import {
+    type ChainConfig,
+    type ChainConfigInput,
+    type Config,
+    type ConfigCacheData,
+    type ConfigInput,
+    configSchema,
+    type OmniPoolConfig,
+    type TokenAddress,
+} from './types'
 
 let setTokens: (chain: DeployedChain, tokens: DeployedToken[]) => void
 
@@ -66,17 +75,22 @@ export class Deployment {
     // In the order of the data.
     readonly #pools: OmniPool[]
 
+    /** The config, parsed (README, "Addresses"). */
+    public readonly config: Config
+
     /**
-     * Errors when a chain config holds another chain's data, a token or an omni pool is on a chain that the config does
-     * not list, an id names no token, a synthetic's original is not on its chainFromId, originals form a loop, an omni
-     * pool is listed twice, a token trades in two omni pools, or the config lists omni pools other than the data's, in
-     * their order.
+     * Errors when the config does not fit `configSchema`, a chain config holds another chain's data, a token or pool is
+     * on a chain the config lacks, an id names no token, a synthetic's original is not on its chainFromId, originals
+     * form a loop, a pool is listed twice, a token trades in two pools, or the config's pools are not the data's.
      */
     public constructor(
-        public readonly config: Config,
+        config: ConfigInput,
         public readonly cacheData: ConfigCacheData
     ) {
-        this.chainsById = new Map(config.chains.map((chainConfig) => [chainConfig.id, new DeployedChain(chainConfig)]))
+        this.config = configSchema.parse(config)
+        this.chainsById = new Map(
+            this.config.chains.map((chainConfig) => [chainConfig.id, new DeployedChain(chainConfig)])
+        )
         this.#tokens = buildTokens(cacheData.tokens, this.chainsById)
         const tokensOfChain = Map.groupBy(this.#tokens, (token) => token.chainId)
         for (const chain of this.chainsById.values()) setTokens(chain, tokensOfChain.get(chain.id) ?? [])
@@ -226,7 +240,7 @@ function tokenOfId<T>(byId: ReadonlyMap<TokenId, T>, id: TokenId, referrer: stri
 }
 
 // Returns a config for the given data. Each chain gets its shipped config, or a minimal one with no contracts.
-function configOf(data: ConfigCacheData): Config {
+function configOf(data: ConfigCacheData): ConfigInput {
     const chainIds = [
         ...new Set([...data.tokens.map((token) => token.chainId), ...data.omniPools.map((pool) => pool.chainId)]),
     ]
@@ -238,10 +252,10 @@ function configOf(data: ConfigCacheData): Config {
         fallbackReceiver: AddressZero,
         btcConfigs: [],
         chains: chainIds.map(
-            (chainId): ChainConfig =>
-                Object.values(shipped)
-                    .map((deployment) => deployment.findChain(chainId)?.config)
-                    .find((config) => config !== undefined) ?? {
+            (chainId): ChainConfigInput =>
+                [mainnet, beta, testnet, dev]
+                    .flatMap((config) => config.chains)
+                    .find((config) => config.id === chainId) ?? {
                     id: chainId,
                     chain: chainData(chainId),
                     rpc: '',

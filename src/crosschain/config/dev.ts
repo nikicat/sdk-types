@@ -1,8 +1,8 @@
 import { ChainId } from '../../constants'
 import { chainData } from '../chainData'
-import type { Config } from '../types'
+import type { ConfigInput } from '../types'
 
-export const config: Config = {
+export const config: ConfigInput = {
     advisor: {
         url: 'https://api.dev.symbiosis.finance/calculations',
     },

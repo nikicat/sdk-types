@@ -1,13 +1,10 @@
-import { getAddress } from '@ethersproject/address'
-import { isHexString } from '@ethersproject/bytes'
-import { keccak256 } from '@ethersproject/keccak256'
-import { toUtf8Bytes } from '@ethersproject/strings'
 import JSBI from 'jsbi'
 import invariant from 'tiny-invariant'
 
+import { parseEvmAddress } from './addresses'
 import type { BigintIsh, ChainId } from './constants'
 import { ONE, SOLIDITY_TYPE_MAXIMA, SolidityType, THREE, TWO, ZERO } from './constants'
-import type { EvmAddress, TokenAddress } from './crosschain/types'
+import type { TokenAddress } from './crosschain/types'
 
 export function validateSolidityTypeInstance(value: JSBI, solidityType: SolidityType): void {
     invariant(JSBI.greaterThanOrEqual(value, ZERO), `${value} is not a ${solidityType}.`)
@@ -20,35 +17,6 @@ export function validateSolidityTypeInstance(value: JSBI, solidityType: Solidity
  */
 export function validateAndParseAddress(address: string): TokenAddress {
     return address === '' ? address : parseEvmAddress(address)
-}
-
-/**
- * Returns the EIP-55 form of an address given all in lowercase or all in uppercase, with a valid EIP-55 checksum, or
- * with a valid EIP-1191 checksum for `eip1191ChainId` when that is given. Errors when the address is in none of these
- * forms.
- */
-export function parseEvmAddress(address: string, eip1191ChainId?: ChainId): EvmAddress {
-    const input =
-        eip1191ChainId !== undefined && hasEip1191Checksum(address, eip1191ChainId) ? address.toLowerCase() : address
-    try {
-        // getAddress gives an EIP-55 0x address or throws, but types it as a string.
-        return getAddress(input) as EvmAddress
-    } catch {
-        invariant(false, `${address} is not a valid address.`)
-    }
-}
-
-/**
- * Checks whether the address has a valid EIP-1191 checksum for the chain id. EIP-1191 is EIP-55 with the chain id and
- * "0x" put before the lowercase address in the hashed text.
- */
-function hasEip1191Checksum(address: string, chainId: ChainId): boolean {
-    if (!isHexString(address, 20)) {
-        return false
-    }
-    const lower = address.slice(2).toLowerCase()
-    const hash = keccak256(toUtf8Bytes(`${chainId}0x${lower}`)).slice(2)
-    return [...lower].every((char, i) => address[i + 2] === (parseInt(hash[i], 16) >= 8 ? char.toUpperCase() : char))
 }
 
 export function parseBigintIsh(bigintIsh: BigintIsh): JSBI {

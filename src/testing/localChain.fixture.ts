@@ -1,5 +1,5 @@
 import type { ChainId } from '../constants'
-import type { EvmChainData } from '../crosschain/types'
+import { type ChainData, chainDataSchema, type EvmChainDataInput } from '../crosschain/types'
 
 // No global table of sdk-types knows this chain, so a test that passes on it reads nothing global.
 export const LOCAL = 31337 as ChainId
@@ -12,18 +12,19 @@ export const hardhatAddresses = [
     '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9',
 ] as const
 
-// The local Hardhat chain with ETH as its gas token, WETH at `wethAddress` and no Uniswap V2 pairs.
+// The local Hardhat chain's parsed data, with ETH as its gas token, WETH at `wethAddress` and no Uniswap V2 pairs.
 export const localChainData = (
     wethAddress: `0x${string}` = hardhatAddresses[0],
-    overrides: Partial<EvmChainData> = {}
-): EvmChainData => ({
-    id: LOCAL,
-    name: 'Hardhat',
-    explorer: '',
-    icons: {},
-    kind: 'evm',
-    gasToken: { chainId: LOCAL, address: '', decimals: 18, symbol: 'ETH' },
-    wrappedGasToken: { chainId: LOCAL, address: wethAddress, decimals: 18, symbol: 'WETH' },
-    uniswapV2: { pairs: [] },
-    ...overrides,
-})
+    overrides: Partial<EvmChainDataInput> = {}
+): ChainData =>
+    chainDataSchema.parse({
+        id: LOCAL,
+        name: 'Hardhat',
+        explorer: '',
+        icons: {},
+        kind: 'evm',
+        gasToken: { chainId: LOCAL, address: '', decimals: 18, symbol: 'ETH' },
+        wrappedGasToken: { chainId: LOCAL, address: wethAddress, decimals: 18, symbol: 'WETH' },
+        uniswapV2: { pairs: [] },
+        ...overrides,
+    } satisfies EvmChainDataInput)

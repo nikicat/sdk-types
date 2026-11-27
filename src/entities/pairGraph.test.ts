@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { parseEvmAddress } from '../addresses'
 import { InsufficientInputAmountError, InsufficientReservesError } from '../errors'
 import { hardhatAddresses, LOCAL, localChainData } from '../testing/localChain.fixture'
 import { Chain } from './chain'
@@ -16,7 +17,7 @@ const dai = new Token(chain, { chainId: LOCAL, address: daiAddress, decimals: 18
 const btc = new Token(chain, { chainId: LOCAL, address: btcAddress, decimals: 8, symbol: 'BTC' })
 const amount = (token: Token, raw: string) => new TokenAmount(token, raw)
 const pair = (a: TokenAmount, b: TokenAmount, n: number) =>
-    new Pair(a, b, `0x${n.toString(16).padStart(40, '0')}` as `0x${string}`)
+    new Pair(a, b, parseEvmAddress(`0x${n.toString(16).padStart(40, '0')}`))
 // ETH -> USD only through DAI
 const ethDai = pair(amount(weth, '1000000000000000000000'), amount(dai, '2000000000000000000000000'), 1)
 const daiUsd = pair(amount(dai, '1000000000000000000000000'), amount(usd, '1000000000000'), 2)

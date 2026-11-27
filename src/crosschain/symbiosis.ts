@@ -7,7 +7,7 @@ import { Cache } from './cache'
 import { CHAIN_DATA } from './chainData'
 import { ConfigCache, type ConfigName, Deployment } from './deployment'
 import type { Id, OmniPoolInfo, TokenInfo } from './config/cache/types'
-import type { ChainConfig, Config, EvmAddress, OmniPoolConfig, OverrideConfig } from './types'
+import type { ChainConfig, Config, ConfigInput, EvmAddress, OmniPoolConfig, OverrideConfig } from './types'
 
 export type TransitCombination = { transitTokenIn: Token; transitTokenOut: Token }
 
@@ -24,7 +24,7 @@ export class Symbiosis {
 
     public constructor(configName: ConfigName, clientId: string, overrideConfig?: OverrideConfig) {
         this.configName = configName
-        let config: Config
+        let config: ConfigInput
         if (overrideConfig?.config) {
             config = overrideConfig.config
         } else {
